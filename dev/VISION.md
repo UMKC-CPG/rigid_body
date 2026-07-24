@@ -104,6 +104,18 @@ recorded under Future Directions at the end of this document.
     can additionally be exported as video, for slides and for
     asynchronous use.
 
+12. **Connect the idealization to a real rotating body.** Apply the
+    torque-free machinery of Goal 1 to the Earth. Using the terrestrial
+    dynamical ellipticity, the rigid-body Euler free-precession period
+    is roughly 305 days, while the Chandler wobble is actually observed
+    at roughly 433 days. That gap is not measurement error: it is the
+    Earth yielding elastically rather than rigidly, and it is the
+    sharpest available demonstration that "rigid body" is an
+    idealization rather than a fact about the world. Reaching it needs
+    no planetary ephemeris and no applied torque — only the torque-free
+    solver of Goal 1 and a realistic ratio of principal moments — which
+    makes it the natural bridge toward Future Direction 2.
+
 ## Design Principles
 
 <!-- Non-negotiable constraints. All architectural and implementation
@@ -181,6 +193,15 @@ decisions must be consistent with these principles. -->
     regime, such as a relativistic one, where the scale itself carries
     meaning.
 
+12. **Deliberate distortions are labeled.** Some effects are too slow
+    or too weak to show at their true magnitude in a classroom, and
+    exaggerating a torque or compressing a timescale to make them
+    visible is legitimate. Doing so silently is not. Whenever a
+    quantity is scaled away from its physical value, the tool states
+    the factor on screen. An unlabeled exaggeration misleads a student
+    in exactly the way an undisclosed numerical drift does, and
+    Principle 2 rejects both for the same reason.
+
 ## Future Directions
 
 <!-- These are explicitly NOT goals for the initial versions. They are
@@ -213,3 +234,19 @@ shut.
    torques to the mechanical picture. This is the furthest-out
    extension; it is noted only so that the treatment of external
    torques (Goal 10) is not hard-wired to gravity alone.
+
+4. **Quantitative planetary precession.** Reproducing the precession of
+   the equinoxes — roughly 25 772 years, or about ten million Earth
+   rotations — and the 18.6-year nutation, under solar and lunar
+   torques acting on an oblate Earth. The obstacle here is not the
+   physics but the integration. At something like a billion time steps,
+   the steadily accumulating energy error of a conventional integrator
+   overwhelms the very effect being measured, which is the regime
+   Principle 2 was written for. Serving this case properly requires a
+   structure-preserving (symplectic) integrator, whose error stays
+   bounded instead of growing without limit; that is a different
+   requirement from a tighter tolerance, and no reduction of the step
+   size substitutes for it. Until then, the clearly labeled
+   exaggeration permitted by Principle 12 covers the classroom need,
+   and the Chandler wobble of Goal 12 gives a real-Earth result that
+   needs no applied torque at all.

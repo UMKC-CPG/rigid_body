@@ -68,7 +68,7 @@ student laptops, which keeps the environment uniform.
 
 Rendering is done in **software**; no GPU is required. Measured frame
 rates and the resulting design budget are recorded in
-`dev/ARCHITECTURE.md`, section 6.3. The short version: geometric
+`dev/ARCHITECTURE.md`, section 9.3. The short version: geometric
 detail is cheap, window area is the scarce resource.
 
 ```bash

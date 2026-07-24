@@ -15,6 +15,7 @@ rigid_body/
     DESIGN.md         Algorithmic design
     PSEUDOCODE.md     Algorithm specifications
     TODO.md           Task list by level
+    spikes/           Throwaway experiments whose results are cited
   src/
     rigid_body/       The importable library (all physics and display)
       core/           Units and rotation mathematics
@@ -159,7 +160,7 @@ the batch tier can write the polhode to HDF5 without a renderer present.
 
 A scenario holds the body, initial conditions, torque models, integrator
 and fidelity settings, and viewpoint. It is plain data with no behavior,
-which is what allows it to cross the tier boundary.
+which is what allows it to cross the tier boundary. See §7.
 
 ### 3.7 `sinks/` — What consumes a trajectory
 
@@ -236,14 +237,13 @@ scripts/rbsim.py                    scripts/rbbatch.py
 The single most important property of this graph: **nothing under
 `dynamics/`, `body/`, `analysis/`, or `geometry/` may import from
 `render/`, `ui/`, or `sinks/`.** That is the rule that keeps the batch
-tier possible and satisfies Principle 9. It is worth enforcing with a
-test.
+tier possible and satisfies Principle 9. It is enforced by a test (§8.6).
 
 ---
 
 ## 5. Key Boundaries
 
-Four seams in this architecture exist specifically to protect a VISION
+Five seams in this architecture exist specifically to protect a VISION
 principle. Each is an interface that must remain stable.
 
 ### 5.1 The inertia-provider boundary (Principle 10)
@@ -273,7 +273,7 @@ yields the batch tier; attaching several at once records a live session.
 `scene_description.py` turns them into drawable primitives, and only
 `vedo_renderer.py` knows about vedo or VTK. Should a browser-delivered
 backend become preferable, it is a new module in `render/` and nothing
-else changes. This matters on a cluster: see §6.3.
+else changes. This matters on a cluster: see §9.3.
 
 ### 5.4 The kernel boundary (Python now, compiled later)
 
@@ -286,11 +286,279 @@ replace either one without a caller changing. No other module should
 grow a numerically hot inner loop; if one does, that is a signal to
 move the work into these two.
 
+### 5.5 The units boundary (Principle 11)
+
+Physical quantities carry explicit units at the edges of the system and
+are bare SI floats everywhere inside it. The conversion happens exactly
+once, when a scenario is loaded, and once more in reverse when a value
+is displayed.
+
+`core/units.py` is the **only** module permitted to import the units
+library. It exposes two operations: parse a quantity (a string such as
+`"10 kg"` or `"0.5 kg*m^2"`, or a number plus a unit) into an SI float,
+and format an SI float back into a human-readable quantity for display.
+
+The library is **pint**. It was chosen over `astropy.units` (which would
+drag in an entire astronomy stack), `unyt` (technically fine but far
+less widely known), and `numericalunits` (no real quantity objects and
+cryptic failures) for three reasons specific to this project:
+
+1. Its weakness is per-operation overhead, and by construction that
+   overhead occurs only at the boundary, never in the integrator.
+2. It produces the clearest error messages of any option. A student who
+   writes `kg/m^2` where `kg*m^2` was meant is told what is wrong, which
+   is worth more here than in most software.
+3. It parses unit strings directly, so scenario files can carry
+   human-readable quantities rather than naked numbers whose units live
+   only in a comment.
+
+Below `scenario/`, no module imports pint, accepts a pint object, or
+returns one. Everything in `dynamics/`, `body/`, `analysis/`, and
+`geometry/` speaks bare SI floats and documents the unit in the name or
+docstring. This is enforced by a test (§8.6).
+
 ---
 
-## 6. Build System
+## 6. The Simulation Loop
 
-### 6.1 Language and dependencies
+### 6.1 Ownership: the simulation drives, single-threaded
+
+The interactive tier runs its own loop, which steps the physics, updates
+the scene, asks the renderer to draw, and then pumps the windowing
+system's event queue. It does **not** hand control to VTK's interactor
+and hang physics off a timer callback.
+
+The reason is uniformity with Tier 2. The batch tier's loop is the same
+loop with a different sink and no event pumping, so one mental model
+covers both, and `simulation_engine.py` is shared rather than
+reimplemented per tier.
+
+The loop is **single-threaded**. Running physics on a worker thread was
+considered and rejected for now: VTK is not thread-safe, so rendering
+would be pinned to the main thread regardless; the locking would work
+against Principle 7 (student-readable source); and nondeterministic
+interleaving is in direct tension with the exact reproducibility that
+Goal 11 promises. Should the future heavy-body case (Future Direction 1)
+make a responsive UI impossible single-threaded, threading can be added
+behind the sink boundary (§5.2) without disturbing the physics.
+
+### 6.2 Pacing: fixed step, fixed substeps, no wall clock
+
+The physics advances by a **fixed time step** taken from the scenario's
+fidelity settings, and a **fixed number of substeps is taken per
+rendered frame**. Elapsed wall-clock time is never consulted.
+
+This is a deliberate departure from the accumulator pattern used in
+interactive graphics generally, where elapsed real time is measured and
+consumed in fixed chunks so that motion proceeds at a true real-time
+rate regardless of machine speed. That trade is correct for a game and
+wrong here, for two reasons:
+
+1. **Reproducibility.** If the number of steps taken depends on how
+   busy the machine was, two runs of one scenario diverge. That breaks
+   Goal 11 and falsifies the §2 claim that a batch run is the run that
+   was explored interactively.
+2. **Honest drift.** Principle 2 puts the departure of the conserved
+   quantities on screen. If the step count varied with frame rate, the
+   displayed drift would vary with machine load — an artifact of the
+   renderer masquerading as a property of the integrator, which is
+   precisely the confusion Principle 2 exists to prevent.
+
+The cost of this choice is that the animation does not run at a
+guaranteed real-time rate: on a loaded machine it simply proceeds more
+slowly in wall time. The physics is untouched. The ratio of simulated
+time to elapsed time is displayed rather than silently corrected, so a
+viewer always knows whether they are watching real time.
+
+### 6.3 Time controls
+
+The controls demanded by Goal 8 are expressed entirely as the number of
+substeps taken per rendered frame:
+
+| Control | Implementation |
+| --- | --- |
+| Pause | Zero substeps per frame; rendering continues |
+| Single step | One substep, then return to zero |
+| Slow motion | Fewer substeps per frame |
+| Fast forward | More substeps per frame |
+| Replay | Re-read stored states instead of stepping |
+
+Note that none of these alters the time step itself. Changing `dt` would
+change the trajectory, so a student slowing the motion down to watch a
+Dzhanibekov flip sees exactly the same flip, not a differently
+integrated one.
+
+### 6.4 The determinism guarantee
+
+Together, §6.1 and §6.2 yield a property worth stating plainly and
+testing (§8.6):
+
+> Given the same scenario, the computed trajectory is identical —
+> bit for bit — regardless of tier, machine load, frame rate, or which
+> time controls were exercised during the run.
+
+Time controls change what is *shown* and when, never what is *computed*.
+
+### 6.5 Trajectory retention
+
+Replay requires history, and history costs memory. The retention policy
+is a fidelity parameter (§2), not a hard-coded constant. The design
+question of what to retain and what to do on overflow — ring buffer,
+downsampling, or spilling to the sink — belongs to DESIGN. The
+architectural constraint is only this: retention is bounded and
+configured, never unbounded growth, and the retention limit is recorded
+in the scenario so that a replay is reproducible.
+
+---
+
+## 7. Configuration
+
+Two configuration mechanisms exist and they hold different kinds of
+thing. Confusing them would undermine reproducibility, so the division
+is stated here as a rule.
+
+**The rc file** (`rbsimrc.py`, following the `XYZrc.py` idiom) holds what
+is *machine-dependent and rarely changed*: filesystem paths, output
+directories, default window size, preferred palette, cluster and queue
+settings, and the default values of anything below.
+
+**The scenario file** holds the *physics*: the body and its density, the
+initial conditions, the torque models in force, the integrator and
+fidelity settings actually used, and the viewpoint.
+
+Precedence runs in one direction:
+
+```
+rc file defaults  <  scenario file  <  command-line arguments
+```
+
+From this follows the rule that matters most:
+
+> **Any value that can affect the computed trajectory must live in the
+> scenario, never only in the rc file.** The rc file may supply its
+> default, but the scenario records the resolved value that was used.
+
+Otherwise a scenario would produce different physics on different
+machines, which would defeat both Goal 11 and the tier bridge of §2. A
+scenario must be self-contained: handing the file to another user on
+another machine must reproduce the same trajectory. The rc file governs
+convenience and environment; it never governs physics.
+
+---
+
+## 8. Testing Strategy
+
+### 8.1 Layers
+
+| Directory | Scope |
+| --- | --- |
+| `tests/unit/` | Pure functions: inertia tensors, rotation |
+| | conversions, unit round-trips |
+| `tests/integration/` | Subsystems together: the engine with |
+| | torques and an integrator over a few steps |
+| `tests/regression/` | Whole scenarios against stored reference |
+| | output |
+
+### 8.2 Oracles
+
+VISION Principle 3 makes analytically solvable cases the standard of
+correctness rather than mere examples. The oracles are:
+
+- The closed-form inertia tensor of each primitive solid in §3.2.
+- Torque-free motion of a symmetric top, whose angular-velocity
+  precession rate about the symmetry axis is known exactly.
+- Rotation initialized exactly about a principal axis, which must
+  remain about that axis.
+- The steady-precession rate of the heavy symmetric top.
+- The Poinsot invariants: `2T = omega . L`, and `|L|` constant under
+  torque-free motion.
+
+When `numerical_inertia.py` arrives, its first duty is to reproduce
+`analytic_inertia.py` on the symmetric solids to within a stated
+tolerance. That is the test which certifies the §5.1 boundary.
+
+### 8.3 Invariants
+
+Properties that must hold everywhere, asserted wherever the quantity is
+produced:
+
+- The inertia tensor is symmetric and positive-definite.
+- The principal moments satisfy the triangle inequalities, `I1 + I2 >=
+  I3` and permutations. A body violating these is not physical.
+- Rotation matrices are orthogonal with determinant `+1`.
+- Quaternions remain normalized.
+
+### 8.4 Tolerance policy
+
+Every numerical tolerance must be **derived and justified**, not tuned.
+A tolerance is chosen from the integrator's order and step size, or from
+the floating-point precision of the operation, and the reasoning is
+recorded in a comment beside it.
+
+The failure mode this exists to prevent is loosening a tolerance until a
+failing test passes. That converts the suite from a check into a rubber
+stamp, and it is especially dangerous here because Principle 2 permits
+drift: a test that tolerates arbitrary drift is testing nothing. Where a
+test bounds drift, the bound is stated as a rate (per unit simulated
+time) so that it remains meaningful as run lengths change.
+
+Drift is held to two different standards, according to regime. The
+second is not a stricter version of the first but a different kind of
+requirement, and it is important not to confuse them:
+
+| Regime | Standard |
+| --- | --- |
+| Classroom demonstration | Relative energy drift below about |
+| | 1e-6 over the run, expressed as a rate |
+| | per unit simulated time |
+| Long integration | Energy error *bounded* rather than |
+| (VISION Future Direction 4) | secular: a structure-preserving |
+| | integrator, not a tighter tolerance |
+
+The distinction matters because the failure it guards against is
+invisible to ordinary testing. A conventional integrator run over a
+demonstration-length interval looks excellent and will pass any
+tolerance test written for the first regime. The same integrator run
+over the ten million rotations of a planetary precession accumulates a
+steadily growing error that no reduction in step size removes, because
+the error is secular rather than random. Tests for the second regime
+must therefore check the *growth* of the error over a long run, not its
+magnitude over a short one.
+
+### 8.5 Reference-output governance
+
+A file in `tests/regression/reference_outputs/` is a claim about correct
+behavior, so it may only be created from a case that is either checked
+against an oracle (§8.2) or verified by hand. Regenerating a reference
+requires the commit message to say what changed and why the new values
+are more correct than the old ones.
+
+Reference outputs are stored in a **compact, diff-reviewable text
+format**, not HDF5. Two reasons: a reviewer can see in a pull request
+exactly which numbers moved, and the repository's `.gitignore` excludes
+HDF5 as bulky derived output (§9.4). Regression references are small by
+construction; anything large enough to need HDF5 is a batch result, not
+a test fixture.
+
+### 8.6 Architectural tests
+
+Three structural properties are mechanically checkable and are therefore
+tested rather than left to discipline:
+
+1. **The import rule of §4.** Nothing under `dynamics/`, `body/`,
+   `analysis/`, or `geometry/` imports from `render/`, `ui/`, or
+   `sinks/`.
+2. **The units boundary of §5.5.** No module outside `core/units.py`
+   imports pint.
+3. **The determinism guarantee of §6.4.** The same scenario run twice,
+   and run under differing time-control sequences, yields identical
+   trajectories.
+
+---
+
+## 9. Build System
+
+### 9.1 Language and dependencies
 
 Python 3.10 or newer, with a NumPy-based numerical core.
 
@@ -302,23 +570,24 @@ Python 3.10 or newer, with a NumPy-based numerical core.
 | `vtk` 9.5.2 | present | Rendering engine beneath vedo |
 | `h5py` 3.15.1 | present | HDF5 output for the batch tier |
 | `matplotlib` 3.10.3 | present | Auxiliary plots |
+| `pint` | **to be added** | Units at the boundary (§5.5) |
 | `pytest` | required | Test suite |
 | `ffmpeg` 6.0 | module | Video export (Goal 11) |
 | `paraview` 6.1.1 | module | Post-hoc visualization of HDF5/XDMF |
-| `virtualgl` 3.1.4 | module | Optional GPU acceleration only (§6.3) |
+| `virtualgl` 3.1.4 | module | Optional GPU acceleration only (§9.3) |
 
 Deliberately *not* dependencies yet: `numba` and `mpi4py` (absent on the
 cluster; both belong to the deferred compiled-kernel work of §5.4), and
 any GUI toolkit beyond what vedo provides.
 
-**No GPU is required.** Measurements in §6.3 established that software
+**No GPU is required.** Measurements in §9.3 established that software
 rendering is sufficient, so neither a GPU allocation nor VirtualGL is a
 prerequisite for the interactive tier.
 
-### 6.2 Running
+### 9.2 Running
 
 ```bash
-# Tier 1: interactive exploration (see §6.3 for the cluster case).
+# Tier 1: interactive exploration (see §9.3 for the cluster case).
 python3 src/scripts/rbsim.py
 
 # Tier 2: batch high-fidelity run from a saved scenario (future).
@@ -328,7 +597,7 @@ python3 src/scripts/rbbatch.py my_scenario.json
 pytest tests/ -v
 ```
 
-### 6.3 Cluster deployment and the rendering budget
+### 9.3 Cluster deployment and the rendering budget
 
 Both the interactive and the batch tiers run on the teaching cluster
 rather than on student laptops, which makes the environment controllable
@@ -341,7 +610,9 @@ vectors, and the telemetry overlay — was rendered offscreen and timed.
 Every measurement below was checked by reading the framebuffer back and
 confirming the scene actually appeared in it, because a render window
 without a valid context accepts draw calls silently and reports a
-gratifying but fictitious frame rate.
+gratifying but fictitious frame rate. The benchmark is kept at
+`dev/spikes/vedo_fps_spike.py` so these numbers can be re-checked when
+the hardware, the libraries, or the scene complexity change.
 
 Software rendering, 8-core node in the `interactive` partition:
 
@@ -383,7 +654,7 @@ separate and smaller question that has not yet been measured. Note that
 plain SSH X11 forwarding is not the answer: it ships GL commands rather
 than pixels and will disappoint regardless of how fast the node renders.
 
-### 6.4 Data interchange
+### 9.4 Data interchange
 
 The batch tier writes HDF5 for numerical results, accompanied by an XDMF
 descriptor so that ParaView can read the time series directly. HDF5 is
@@ -392,16 +663,47 @@ is already available on the cluster. The full scenario is embedded in the
 output file's metadata so that any result can be traced back to the run
 that produced it.
 
+HDF5 output is excluded from version control as bulky derived data: the
+scenario that generated it is tracked instead, which is smaller and more
+useful (§8.5).
+
+### 9.5 The shared environment
+
+Students must not have to build a Python environment. The project
+follows the group's existing practice of a shared mamba environment
+plus an Lmod modulefile, so that a student logs in and turns the tool on
+in one command.
+
+```
+/cluster/VAST/rulisp-lab/cpg/mamba/envs/rigid_body      the environment
+/cluster/VAST/rulisp-lab/cpg/modulefiles/cpg_rigidbody/ the modulefile
+```
+
+This mirrors the arrangement already in place for other group codes —
+there is a per-project environment beside `sabsim` and others, and the
+modulefile follows the documented pattern of `cpg_lammps`. A session
+then begins:
+
+```bash
+module load cpg_rigidbody
+rbsim
+```
+
+The modulefile is responsible for activating the environment and putting
+`src/scripts/` on `PATH`. Because the environment is shared and
+read-only to students, everyone runs identical library versions, which
+also makes the §9.3 performance figures meaningful across users.
+
 ---
 
-## 7. Development Checkpoints
+## 10. Development Checkpoints
 
-The repository is **not yet under version control**; `git init` remains
-to be done before the `/commit` and `/bigcommit` workflows can be used.
+The repository is under version control at
+`git@github.com:UMKC-CPG/rigid_body.git`, with work on `main`.
 
-Once initialized, each level of the document chain gets a tagged baseline
-when it is first considered complete, so that later drift can be measured
-against a fixed point:
+Each level of the document chain gets a tagged baseline when it is first
+considered complete, so that later drift can be measured against a fixed
+point:
 
 ```
 v0.1-vision          VISION.md complete
