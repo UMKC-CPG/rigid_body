@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------
+# RIGID_BODY .gitignore
+#
+# Excludes ordinary build and tooling debris, plus the output that the
+# simulation itself produces. Simulation results are deliberately kept
+# out of the repository: the batch tier writes large HDF5 time series,
+# and the scenario file that generated them is the thing worth version
+# controlling, not the gigabytes that came out the other end.
+# ---------------------------------------------------------------------
+
+# Python bytecode caches and packaging debris.
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Test-runner and coverage caches.
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments.
+venv/
+.venv/
+env/
+
+# Simulation output. The batch tier (ARCHITECTURE.md section 2) writes
+# HDF5 datasets with XDMF companions, and the interactive tier can
+# export video. Both are reproducible from a saved scenario file, which
+# IS tracked, so the bulky derived artifacts stay out.
+*.h5
+*.hdf5
+*.xmf
+*.xdmf
+*.mp4
+*.avi
+*.mkv
+
+# Rendered frames and screenshots produced during a run.
+frames/
+*.png
+!dev/figures/*.png
+
+# The command log written by the scripts/ entry points, following the
+# XYZ.py convention of appending each invocation to a local `command`
+# file. This is a per-working-directory record, not project source.
+command
+
+# Slurm job output from cluster runs.
+slurm-*.out
+*.sbatch.log
+
+# Editor and OS debris.
+*.swp
+*.swo
+*~
+.DS_Store
+.idea/
+.vscode/
