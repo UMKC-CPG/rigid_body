@@ -18,7 +18,7 @@
 | 6 | Integrators | written |
 | 7 | Conservation monitoring | written |
 | 8 | Analytic solutions | written |
-| 9 | Poinsot geometry | not yet written |
+| 9 | Poinsot geometry | written |
 | 10 | Frame presentation | not yet written |
 | 11 | Scenario schema | not yet written |
 | 12 | Trajectory retention | not yet written |
@@ -1548,3 +1548,164 @@ a real physical effect and the numerical error tracking it are the same
 size. The overlay is what lets a student see which is which, which is the
 whole reason Goal 9 pairs the analytic curve with the numerical one rather
 than trusting either alone.
+
+---
+
+## 9. Poinsot Geometry
+
+The Poinsot construction is the centerpiece VISION Goal 1 asks for, and
+the object VISION Goal 5 uses to make the body-versus-space distinction
+concrete. It is a way of *seeing* torque-free motion: a fixed ellipsoid
+attached to the body rolls without slipping on a plane fixed in space,
+and the point of contact traces one curve on the ellipsoid and another on
+the plane. Every piece of it is built from the two invariants §2.5
+identified — the kinetic energy `2T` and the squared angular momentum
+`|L|^2` — so the whole construction exists only for torque-free motion,
+where those two are conserved.
+
+This section specifies the geometry in physical coordinates. It does not
+draw anything: `geometry/poinsot.py` (ARCHITECTURE §3.5) computes *what*
+the surfaces and curves are, and `render/` later decides how to show
+them. Keeping the two apart is what lets the batch tier write a polhode
+to HDF5 with no renderer present (ARCHITECTURE §3.5), and it is why the
+scale choices a drawing needs are deferred to §13 rather than settled
+here.
+
+### 9.1 The construction in one statement
+
+For torque-free motion the following is exactly true, and it is the whole
+of Poinsot:
+
+> Scale the angular velocity to `rho = omega / sqrt(2T)`. That point lies
+> on the body's momental ellipsoid, the ellipsoid's tangent plane there
+> is fixed in space and perpendicular to `L`, and the ellipsoid rolls on
+> that plane without slipping as the body turns.
+
+The three clauses are §9.2, §9.3, and the rolling that follows from them.
+Each is a short calculation from the two invariants, given below, because
+a student should be able to see that the construction is derived rather
+than decreed.
+
+### 9.2 The momental ellipsoid
+
+The momental (inertia) ellipsoid is the surface, fixed in the body frame,
+
+```
+I_1 x_1^2 + I_2 x_2^2 + I_3 x_3^2 = 1
+```
+
+with semi-axes `1 / sqrt(I_k)` along the principal axes. Its shape is a
+property of the body alone, so §3.8 computes it once at construction and
+never again. Note the inversion that surprises students: the **longest**
+semi-axis lies along the axis of **smallest** moment, so the ellipsoid is
+stretched along the direction the body most easily spins about.
+
+The scaled angular velocity `rho = omega / sqrt(2T)` lies on this surface,
+because
+
+```
+rho . I . rho = (omega . I . omega) / (2T) = 2T / (2T) = 1
+```
+
+using `omega . I . omega = 2T` from §2.5. So as the body tumbles, the
+contact point `rho` moves over a fixed ellipsoid — the picture Goal 1 asks
+for.
+
+This ellipsoid is also the visual proxy for a body that has no geometry
+to draw. §3.6 admits bodies specified by their moments alone — the Earth
+of Goal 12 is one — and §3.6 promised they would fall back to displaying
+the momental ellipsoid. This is that ellipsoid: the object the dynamics
+actually cares about, drawable whether or not a shape was ever given.
+
+A drawing may prefer to scale the ellipsoid so that the tip of `omega`
+itself is the contact point, rather than the scaled `rho`; that is the
+equivalent "energy ellipsoid" `omega . I . omega = 2T`, the same shape at
+a different size. Which scale is drawn is a labeled presentation choice
+(§13, VISION Principle 12), not a change to the physics, which is why the
+size is fixed here only up to that choice.
+
+### 9.3 The invariable plane
+
+At the contact point the ellipsoid's outward normal is along the gradient
+of its defining form,
+
+```
+normal at rho  ~  grad( x . I . x )  =  2 * I * rho  ~  I * omega  =  L
+```
+
+so the normal is **parallel to the angular momentum**. Because `L` is
+fixed in space under torque-free motion (§2.5), the tangent plane at the
+contact point has a fixed orientation, and its distance from the origin,
+
+```
+distance = rho . (L / |L|) = 2T / ( sqrt(2T) * |L| ) = sqrt(2T) / |L|
+```
+
+is constant as well, since both `2T` and `|L|` are conserved. A plane
+with fixed orientation at a fixed distance is fixed in space: this is the
+**invariable plane**, and the constancy of `L` that pins it is exactly
+the invariable *axis* whose direction the conservation monitor watches
+(§7.3). A wandering of that plane's normal on screen is therefore a
+visible report of numerical drift, not physics.
+
+The ellipsoid rolls on this plane **without slipping** because the
+contact point `rho` is parallel to `omega`, the instantaneous axis of
+rotation, so the material point of the body there has zero velocity. A
+point with no velocity is not sliding — it is the instantaneous pivot,
+and that is precisely rolling contact.
+
+### 9.4 The polhode: the track on the body
+
+As the contact point moves, it traces a curve on the ellipsoid that is
+fixed in the body frame. That curve is the **polhode**, and it is the
+path of `omega` as seen in the body (VISION Goal 5). It is the
+intersection of the two quadric surfaces the invariants define in
+`omega`-space:
+
+```
+2T    = I_1*omega_1^2   + I_2*omega_2^2   + I_3*omega_3^2
+|L|^2 = I_1^2*omega_1^2 + I_2^2*omega_2^2 + I_3^2*omega_3^2
+```
+
+The first is the energy ellipsoid; the second the momentum ellipsoid; the
+polhode is where they meet. It is a closed curve, and its exact form is
+the solution §8 already gives: a circle for the symmetric top (§8.3), and
+the Jacobi-elliptic curve for the asymmetric top (§8.4), so `poinsot.py`
+draws the verified analytic polhode where one exists and falls back to
+intersecting the quadrics numerically otherwise.
+
+The family of polhodes on one ellipsoid *is* the stability story of §4.4
+made visible. Near the axes of largest and smallest moment the polhodes
+are small closed loops circling the axis — steady rotation, stable. The
+two families are divided by a **separatrix** that crosses the intermediate
+axis, and a polhode near that separatrix swings almost all the way to the
+opposite side before returning: that is the Dzhanibekov flip, and its
+separatrix is the `k -> 1` case whose period diverges in §8.4. The
+tennis-racket theorem is not a separate fact to memorize; it is the shape
+of the polhodes near the middle axis.
+
+### 9.5 The herpolhode: the track in space
+
+The same contact point, viewed in the space frame, traces a different
+curve — this one lying in the fixed invariable plane. It is the
+**herpolhode**, and it is the path of `omega` as seen in space (VISION
+Goal 5).
+
+Two properties are worth stating because they look wrong at first. The
+herpolhode is in general **not closed**: the body-frame circulation and
+the space-frame precession run at rates whose ratio is usually
+irrational (the two rates of §8.3 in the symmetric case), so `omega`
+never quite retraces its path in space and slowly fills an annular band.
+That band is bounded — the herpolhode is confined between two concentric
+circles, the radii set by the polhode's nearest and farthest approach to
+`L` — and it is everywhere concave toward the point where `L` pierces the
+plane. A student who expects a simple closed loop and sees a slowly
+precessing rosette is seeing the incommensurate frequencies directly.
+
+The pairing is the whole point of Goal 5. One physical vector, `omega`,
+traces the **polhode** on the tumbling ellipsoid and the **herpolhode**
+on the fixed plane at the same instant. Watching the two together — the
+body-frame curve turning with the body, the space-frame curve holding
+still beneath it — is what turns the Poinsot construction from a picture
+to be memorized into the reason torque-free motion looks the way it does.
+§10 takes up how the tool presents one motion in both frames at once.
