@@ -21,7 +21,7 @@
 | 9 | Poinsot geometry | written |
 | 10 | Frame presentation | written |
 | 11 | Scenario schema | written |
-| 12 | Trajectory retention | not yet written |
+| 12 | Trajectory retention | written |
 | 13 | Scene description and palettes | not yet written |
 
 ---
@@ -2036,3 +2036,156 @@ Nothing here dictates the concrete format — a text key-value form is the
 natural fit, and PSEUDOCODE settles the choice — but a format that fails
 any of the three constraints above cannot serve, however convenient it
 otherwise looks.
+
+---
+
+## 12. Trajectory Retention
+
+VISION Goal 8 asks for replay of a completed run, and Goal 11 for
+exporting a selected span as video; both need the past states of a
+trajectory to remain available after they were computed. ARCHITECTURE
+§6.5 left the policy — what to keep, and what to do when the budget is
+full — to this level, fixing only that retention is bounded, configured,
+and recorded in the scenario (§11.6). This section settles it.
+
+### 12.1 The ground truth that makes retention safe
+
+One fact from earlier changes the whole character of the problem. By the
+determinism guarantee of ARCHITECTURE §6.4, the entire trajectory is a
+pure function of the scenario: the same file re-run yields the identical
+sequence of states, bit for bit. So the trajectory is never truly *lost*
+by being dropped from memory — it can always be recomputed from the
+scenario, which is its authoritative record.
+
+That reframes retention as a **cache over a recomputable ground truth**,
+not as custody of the only copy. What a retention policy buys is not
+safety of the data — the scenario already provides that — but *random
+access*: reaching an arbitrary past instant by a table lookup instead of
+by re-integrating from the start. Every policy below is therefore free to
+discard, because discarding trades memory for recomputation and never
+risks the data itself. This is what lets ARCHITECTURE §6.5 insist on a
+hard bound with a clear conscience.
+
+The recomputation is exact for a subtle but decisive reason: the state of
+§2.1 is **Markovian**. The derivative function (§4.2) and every torque
+model (§5.1) depend only on the current state and time, never on the
+history that produced it, so any stored state is a perfect restart
+point — re-integrating forward from it reproduces the original
+continuation exactly. §12.5 builds directly on this.
+
+### 12.2 Retention observes; it never writes back
+
+Retention is strictly read-only with respect to the state, exactly as the
+conservation monitor is (§7.5). It receives the states the engine emits,
+keeps some, and serves them back for replay; it never feeds a value into
+the engine. This is not a stylistic preference but a requirement of
+ARCHITECTURE §6.4: if replaying, or enabling retention at all, could
+alter a later state, then turning replay on or off would change the
+physics, and the determinism guarantee would be false. Retention sits on
+the reading side of the loop with the monitor and the renderer, not on
+the computing side with the integrator and the torque sum.
+
+It follows that retention is naturally expressed through the sink boundary
+(ARCHITECTURE §5.2). The engine emits to a sink; a **retaining sink**
+holds a bounded window of what it receives and optionally forwards the
+overflow onward. Because §5.2 already allows several sinks at once,
+retention composes with recording and rendering rather than complicating
+the engine, which stays ignorant of what becomes of the states it
+produces.
+
+### 12.3 What a retained sample holds
+
+A retained sample is the seven-number state of §2.1 and its simulated
+time, and nothing more. Everything a replayed frame needs to display —
+the kinetic energy, the space-frame angular momentum, the Euler angles,
+the Poinsot surfaces — is recomputed from that state on demand, precisely
+as §2.5 computes them during a live run. Storing them instead would
+reintroduce the hazard §2.5 exists to prevent: a cached energy that
+disagrees with the state it was supposed to describe. Recomputing keeps a
+replayed frame as internally consistent as a live one.
+
+There is exactly one path-dependent exception, and naming it keeps the
+rule honest. The conservation monitor's accumulators (§7.2) are integrals
+over the run so far, so they cannot be reconstructed from a single state
+in isolation. Either the scalar accumulators are stored alongside each
+retained sample — a negligible addition of a few floats — or they are
+rebuilt by re-integration when a replay needs them (§12.5). Everything
+else recomputes pointwise; only the running balance carries history.
+
+### 12.4 The default: a bounded ring buffer
+
+The interactive default is a ring buffer of exact states sized by the
+retention limit of §11.6. It holds the most recent window of the run at
+full temporal resolution, one stored sample per substep, and when it
+fills, each new sample overwrites the oldest. The cost is a fixed block
+of memory proportional to the window length, and the per-step work is
+constant: append, and advance a pointer.
+
+This is the right default because the interactive gestures of Goal 8 are
+overwhelmingly *local in time*. Scrubbing back to re-watch a Dzhanibekov
+flip, single-stepping through a nutation, slowing the last few seconds —
+all read the recent past, which is exactly what the window holds at exact
+resolution and so replays by lookup, matching the "re-read stored states"
+row of ARCHITECTURE §6.3. What falls off the far end of the window is the
+deep past, which is both rarely sought interactively and, by §12.1,
+recomputable from the scenario when it is.
+
+### 12.5 Covering a long run: keyframe, then re-integrate
+
+A ring buffer covers a bounded window; it does not give random access to
+an arbitrary instant of a long run within bounded memory. The exact way
+to do that follows from the Markov property of §12.1. Store **keyframes**
+— exact states at a sparse, regular stride — and to reach any requested
+instant, start from the nearest earlier keyframe and re-integrate forward
+the handful of steps to the target. Memory is bounded by the number of
+keyframes; the recomputation is bounded by the stride. Both knobs are
+fixed, and the instant recovered is bit-for-bit the original, because
+re-integrating from an exact state reproduces the exact continuation.
+
+This is deliberately preferred over the other obvious scheme,
+**downsampling with interpolation** — keeping every k-th state and
+interpolating between them. Interpolation does not reconstruct the
+trajectory; it invents a plausible path between samples, and a
+quaternion interpolation in particular only approximates the true
+orientation. Presenting that as the recorded motion would put an
+approximation on screen dressed as physics, which is exactly what
+Principle 2 forbids. Keyframe re-integration costs a little arithmetic
+and returns the true state; interpolation costs less and returns a
+fiction. Where a coarse downsampled overview is genuinely useful — a
+scrub-bar thumbnail of a very long run — it is allowed, but the
+interpolated frames are labeled as approximate, and the exact path
+remains one re-integration away.
+
+### 12.6 Preserving the whole history: spilling to a sink
+
+When a run must be kept in full — to export a long span as video
+(Goal 11), or to hand a complete session to the batch tier — the bounded
+window spills rather than discards. On overflow the retaining sink of
+§12.2 forwards the evicted samples to a downstream sink instead of
+overwriting them, and `hdf5_sink` (ARCHITECTURE §3.7) writes them to
+disk. Memory stays bounded at the window size while the disk accumulates
+the entire trajectory, and a replay draws the recent past from memory and
+the deep past from the file.
+
+This is the point where the two tiers meet in one mechanism. The batch
+tier *is* an engine whose sink is `hdf5_sink` and nothing else; an
+interactive session that spills is the same engine with a ring buffer in
+front of the same sink. Recording a live session, which ARCHITECTURE §5.2
+describes as attaching several sinks at once, is therefore not a separate
+feature but this policy with the downstream sink always attached.
+
+### 12.7 Why the limit is recorded, when the trajectory is not affected
+
+ARCHITECTURE §6.5 requires the retention limit to travel in the scenario
+so that a replay is reproducible, which can look puzzling given §12.2:
+retention never touches the trajectory, so the computed states are the
+same whatever the limit. The resolution is the distinction of §11.2. The
+*trajectory* is reproducible unconditionally, because retention is
+read-only. What the limit governs is the *replay a viewer actually sees* —
+and that can differ, but only under the lossy overview of §12.5, where a
+coarser stride yields coarser approximate frames between exact ones.
+Recording the limit makes even that approximate view reproducible, so an
+instructor who slows through a flip in lecture and a student who reloads
+the file later are looking at the same thing down to the interpolation.
+For the exact policies of §12.4 and §12.6 the recorded limit changes only
+memory use, never a single displayed state.

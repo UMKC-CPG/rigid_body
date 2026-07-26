@@ -28,18 +28,15 @@ questions worth carrying forward.
 
 **Sections still to write** (see the Contents table in `DESIGN.md`):
 
-- [ ] §12 Trajectory retention — the history/replay buffer policy
-      deferred from ARCHITECTURE §6.5 (ring buffer, downsampling, or
-      spilling to the sink). §11.6 records the resolved retention limit;
-      this section decides what that limit means and what overflow does.
-      **This is the next section.**
 - [ ] §13 Scene description and palettes — renderer-agnostic list of
-      what to draw, and the labeled scale choices §9.2 and §12 defer here
-      (VISION Principles 6 and 12).
+      what to draw, and the labeled scale choices §9.2 defers here, plus
+      the palette/frame-color and panel-layout choices §10.6 defers here
+      (VISION Principles 6 and 12). **This is the next and final DESIGN
+      section.**
 
 **Open items carried forward:**
 
-- Sections §1–§11 are drafted; §1–§10 are committed. The §8.4 elliptic
+- Sections §1–§12 are drafted; §1–§11 are committed. The §8.4 elliptic
   solution is numerically verified (`dev/spikes/free_top_elliptic.py`,
   passing).
 - After DESIGN is complete: tag `v0.3-design` (ARCHITECTURE §10), then
