@@ -22,7 +22,7 @@
 | 10 | Frame presentation | written |
 | 11 | Scenario schema | written |
 | 12 | Trajectory retention | written |
-| 13 | Scene description and palettes | not yet written |
+| 13 | Scene description and palettes | written |
 
 ---
 
@@ -2189,3 +2189,172 @@ instructor who slows through a flip in lecture and a student who reloads
 the file later are looking at the same thing down to the interpolation.
 For the exact policies of §12.4 and §12.6 the recorded limit changes only
 memory use, never a single displayed state.
+
+---
+
+## 13. Scene Description and Palettes
+
+This is the last link in the chain VISION Principle 9 draws between
+physics and presentation, and it is where the quantities the earlier
+sections computed become something on a screen. Two modules share the
+work: `scene_description.py` lists *what* to draw in renderer-agnostic
+terms, and `palettes.py` fixes *how* each thing is encoded (ARCHITECTURE
+§3.8). Neither draws a pixel — that is `vedo_renderer.py` alone (§5.3).
+This section also discharges the presentation choices earlier sections
+deferred to it: the ellipsoid's scale (§9.2), and the frame colors and
+panel layout (§10.6).
+
+### 13.1 Three stages: quantity, primitive, pixel
+
+Drawing passes through three hands, and the seams between them are the
+renderer boundary of ARCHITECTURE §5.3 stated in the direction the data
+flows:
+
+1. `geometry/` and `analysis/` produce **physical quantities** — the
+   momental ellipsoid (§9.2), the polhode and herpolhode (§9.4, §9.5),
+   the vectors `omega` and `L`, the frame axes — in physical coordinates,
+   knowing nothing of how they will look.
+2. `scene_description.py` turns those into a **renderer-agnostic list of
+   drawables**: a plain-data description of what is on stage, each item
+   carrying its geometry, the physical role it plays, the frame (§10) it
+   lives in, and its label — but no color and no VTK.
+3. `vedo_renderer.py` realizes that list as **pixels**, and it is the
+   only module that names vedo or VTK, so a browser backend would replace
+   this stage and nothing above it (§5.3, Principle 9).
+
+The middle stage is the one this section specifies. Like the scenario
+(§11) it is plain data, which is what lets the same description drive a
+live window or a `video_sink` (§12.6) without either reaching into the
+physics. That a scene description exists at all is the structural form of
+Principle 9: presentation is assembled from the physics, never mixed into
+it.
+
+### 13.2 Every drawable is a named quantity
+
+VISION Goal 9 and Principle 5 make one demand that shapes the whole
+description: nothing is drawn that does not stand for a named physical
+quantity a student can trace back to the equations. So a drawable is not
+a shape with a color; it is a *quantity* with a geometry, a role, and a
+label, and the label travels with it rather than being added by the
+renderer as an afterthought. The inventory the interactive scene draws,
+each item tagged with the section that defines it:
+
+| Drawable | Quantity | Frame |
+| --- | --- | --- |
+| Body mesh, or its ellipsoid proxy (§3.6) | the rigid body | body |
+| Momental ellipsoid (§9.2) | inertia, as a shape | body |
+| Invariable plane (§9.3) | the plane perpendicular to `L` | space |
+| Polhode trace (§9.4) | path of `omega` in the body | body |
+| Herpolhode trace (§9.5) | path of `omega` in space | space |
+| Angular velocity arrow | `omega` | both |
+| Angular momentum arrow | `L` | both |
+| Principal-axis triad (§1.1) | body axes `1, 2, 3` | body |
+| Laboratory triad (§1.1) | space axes `X, Y, Z` | space |
+| Telemetry overlay (§13.6) | the monitor's readout (§7) | neither |
+
+The "Frame" column is not decoration: §10 draws each quantity in whichever
+of the two views holds its frame still, so an item's frame decides which
+panel it belongs in and whether it moves or holds. `omega` and `L` appear
+in both, which is exactly the point §10.4 made about one arrow wearing two
+descriptions.
+
+The rule that makes this hold is negative and worth stating: a drawable
+with no named quantity behind it does not go in the scene. Decorative
+geometry, unlabeled helper lines, and cosmetic flourishes are the kind of
+thing Principle 5 rules out, because a student cannot trace them back to
+anything.
+
+### 13.3 A palette maps role to encoding
+
+A palette is a mapping from the *role* an item plays to the *visual
+encoding* it is drawn with — color, line style, line weight, opacity,
+marker. The scene description names only the role; the palette resolves
+the role to an encoding; the renderer turns the encoding into pixels. That
+indirection is Principle 6 made concrete: the palette is a selectable
+table, so switching from a light to a dark to a color-blind-safe scheme
+touches neither the scene description nor the physics.
+
+Principle 6 also imposes a rule that reaches back into §13.2:
+
+> No distinction that carries meaning may rest on color alone where a
+> label or line style can also carry it.
+
+So every meaningful distinction is encoded **redundantly** — in color,
+and in a second channel that survives the loss of color. The polhode and
+herpolhode differ in hue *and* in dash pattern *and* in label; the body
+and space frames differ in hue *and* in their axis labels (`1, 2, 3`
+versus `X, Y, Z`); `omega` and `L` differ in hue *and* in arrowhead style
+*and* in label. This redundancy is precisely what makes a color-blind-safe
+palette possible without losing information, and it is why §13.2 required
+every drawable to carry a label and a line-style role and not merely a
+color slot. A palette that had to distinguish two curves by color alone
+would already have violated the rule before it was chosen.
+
+### 13.4 Coding the two frames
+
+§10.6 deferred to here the question of which colors carry which frame, and
+the answer follows the redundancy rule of §13.3. Each frame is given a
+consistent visual identity — one hue family for everything anchored to the
+body, another for everything anchored to space — applied uniformly across
+that frame's axis triad, its trace (polhode with the body, herpolhode with
+space), and its reading of a shared vector. A viewer then learns the
+coding once and reads it everywhere, and because the frames are also told
+apart by their axis labels, the coding survives a color-blind palette.
+
+The panel layout §10.6 left open is a presentation setting, not a physical
+one, and lives in the presentation zone of the scenario (§11.2). The
+default gives the two frames equal panels, since the whole point of the
+side-by-side view is an even comparison; a scenario may bias the split, or
+select the single-panel switching view instead, without touching a
+computed state.
+
+### 13.5 The ellipsoid scale, and other labeled choices
+
+§9.2 left the momental ellipsoid's *size* deliberately open, since the
+shape carries the physics and the size is a drawing convention. Two
+scalings are meaningful: the **inertia ellipsoid** `I_1 x_1^2 + I_2 x_2^2
++ I_3 x_3^2 = 1`, which is fixed in the body regardless of how fast it
+spins and on which the contact point is the scaled `rho = omega /
+sqrt(2T)`; and the **energy ellipsoid** `omega . I . omega = 2T`, the same
+shape resized so that the tip of `omega` itself is the contact point.
+
+The default is the inertia ellipsoid, because it is the body-fixed object
+§9.2 built the construction on: it does not change size as the spin rate
+changes, so a student comparing two runs of one body sees the same
+ellipsoid roll differently rather than a differently sized ellipsoid. The
+energy-ellipsoid scaling is offered for the viewer who wants the drawn
+`omega` arrow to be the literal contact point, and whichever is shown is
+**stated on screen**, because it is a scale chosen away from any single
+physical value — exactly the situation VISION Principle 12 governs.
+
+Principle 12 covers more of this section than the ellipsoid alone. Any
+quantity a scene scales away from its physical magnitude to make it
+visible states the factor on screen: the exaggerated figure-axis tilt that
+makes the Chandler wobble (Goal 12) large enough to see, a torque scaled
+up for a classroom, a timescale compressed. And the non-physics additions
+carry their own honest label — the internal-dissipation state modifier of
+§5.5, which is not a torque and must not be dressed as ordinary physics.
+An unlabeled exaggeration misleads in exactly the way an undisclosed
+numerical drift does (§7), and the scene description carries these labels
+as first-class text, not as chrome a palette could hide.
+
+### 13.6 The overlay, and what the batch tier draws instead
+
+The telemetry overlay is the on-screen face of the monitor (§7): the
+energy and angular-momentum residuals (§7.2) reported relative and per
+unit time (§7.3), the ratio of simulated to elapsed time that ARCHITECTURE
+§6.2 insists be shown rather than silently corrected, and the Euler angles
+(§2.6) with their degeneracy marked when `sin(theta)` is near zero. It is
+a drawable like any other in §13.2 — a named quantity with a label — but
+one belonging to no single frame, so it rides above both panels rather
+than inside either.
+
+A closing note returns the document to the boundary it started from. The
+batch tier builds no scene description at all. It has no renderer (§5.3),
+so `geometry/` writes the same polhode, ellipsoid, and traces straight to
+HDF5 with an XDMF companion (ARCHITECTURE §3.7, §9.3), and ParaView draws
+them afterward. This is the §9 split paying off one last time: because the
+geometry was computed in physical coordinates with no drawing mixed in,
+the interactive tier can wrap it in a scene description and the batch tier
+can serialize it untouched, from the one set of numbers the physics
+produced.

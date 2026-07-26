@@ -22,25 +22,30 @@
 <!-- Tasks related to algorithms and data structures, mathematical
 foundations, interaction rules. -->
 
-`DESIGN.md` is being drafted section by section. Status is tracked in its
-own Contents table; this list only records what remains and any open
-questions worth carrying forward.
+`DESIGN.md` is complete: all thirteen sections are drafted, and its
+Contents table marks every one "written". This list now records only the
+milestone work that follows.
 
-**Sections still to write** (see the Contents table in `DESIGN.md`):
+**All DESIGN sections are written.** §1–§12 are committed; §13 (scene
+description and palettes) is drafted and awaiting commit.
 
-- [ ] §13 Scene description and palettes — renderer-agnostic list of
-      what to draw, and the labeled scale choices §9.2 defers here, plus
-      the palette/frame-color and panel-layout choices §10.6 defers here
-      (VISION Principles 6 and 12). **This is the next and final DESIGN
-      section.**
+**Next milestone — close out DESIGN and open PSEUDOCODE:**
+
+- [ ] Commit §13. **This is the next step.**
+- [ ] Run `/refine` to check consistency across VISION → ARCHITECTURE →
+      DESIGN now that the middle level is whole, before locking it.
+- [ ] Tag `v0.3-design` (ARCHITECTURE §10) once §13 is committed and the
+      chain is consistent.
+- [ ] Begin `PSEUDOCODE.md`, the fourth level of the chain.
 
 **Open items carried forward:**
 
-- Sections §1–§12 are drafted; §1–§11 are committed. The §8.4 elliptic
-  solution is numerically verified (`dev/spikes/free_top_elliptic.py`,
-  passing).
-- After DESIGN is complete: tag `v0.3-design` (ARCHITECTURE §10), then
-  begin `PSEUDOCODE.md`.
+- The §8.4 elliptic solution is numerically verified
+  (`dev/spikes/free_top_elliptic.py`, passing). PSEUDOCODE and code for
+  `analytic_solutions.py` must reproduce the forms that spike certifies.
+- Two DESIGN forward-obligations for the code level: `numerical_inertia.py`
+  must reproduce §3.2 to a stated tolerance (§3.7), and the format chosen
+  for the scenario (§11.7) must satisfy all three constraints there.
 
 ---
 
