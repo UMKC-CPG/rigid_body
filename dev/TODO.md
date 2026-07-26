@@ -22,20 +22,33 @@
 <!-- Tasks related to algorithms and data structures, mathematical
 foundations, interaction rules. -->
 
-`DESIGN.md` is complete: all thirteen sections are drafted, and its
-Contents table marks every one "written". This list now records only the
-milestone work that follows.
+`DESIGN.md` is complete: all fourteen sections are drafted, and its
+Contents table marks every one "written". A `/refine` pass reconciled it
+with ARCHITECTURE (see below). This list now records only the milestone
+work that follows.
 
-**All DESIGN sections are written.** §1–§12 are committed; §13 (scene
-description and palettes) is drafted and awaiting commit.
+**All DESIGN sections are written**, §1–§13 committed. §14 (interaction and
+controls) and the refine edits are drafted and awaiting commit.
+
+**`/refine` outcomes (this pass):**
+
+- [x] Finding 1 — retention buffer had two homes. Fixed DESIGN §12 to
+      name `dynamics/trajectory.py` as the buffer (ARCH §3.3), with the
+      sink boundary reserved for recording/spill; corrected the illegal
+      "buffer forwards to hdf5_sink" (dynamics/ may not import sinks/).
+- [x] Finding 2 — scenario format. Chose **TOML**; DESIGN §11.7 now names
+      it, and ARCHITECTURE §9.1/§9.2 align (`.toml`, `tomli-w` writer,
+      `tomllib`/`tomli` reader).
+- [x] Finding 3 — the `ui/controls.py` layer had no DESIGN prose. Added
+      DESIGN §14 (interaction and controls), per the chain division: ARCH
+      names the tool, DESIGN gives the prose, PSEUDOCODE the algorithm.
 
 **Next milestone — close out DESIGN and open PSEUDOCODE:**
 
-- [ ] Commit §13. **This is the next step.**
-- [ ] Run `/refine` to check consistency across VISION → ARCHITECTURE →
-      DESIGN now that the middle level is whole, before locking it.
-- [ ] Tag `v0.3-design` (ARCHITECTURE §10) once §13 is committed and the
-      chain is consistent.
+- [ ] Commit §13 (done: `ba2d9fd`) — then commit §14 and the refine edits.
+      **This is the next step.**
+- [ ] Tag `v0.3-design` (ARCHITECTURE §10) once the refine edits are
+      committed and the chain is consistent.
 - [ ] Begin `PSEUDOCODE.md`, the fourth level of the chain.
 
 **Open items carried forward:**
@@ -44,8 +57,8 @@ description and palettes) is drafted and awaiting commit.
   (`dev/spikes/free_top_elliptic.py`, passing). PSEUDOCODE and code for
   `analytic_solutions.py` must reproduce the forms that spike certifies.
 - Two DESIGN forward-obligations for the code level: `numerical_inertia.py`
-  must reproduce §3.2 to a stated tolerance (§3.7), and the format chosen
-  for the scenario (§11.7) must satisfy all three constraints there.
+  must reproduce §3.2 to a stated tolerance (§3.7), and the TOML schema
+  (§11.7) must be given its exact key layout in PSEUDOCODE.
 
 ---
 

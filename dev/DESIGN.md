@@ -23,6 +23,7 @@
 | 11 | Scenario schema | written |
 | 12 | Trajectory retention | written |
 | 13 | Scene description and palettes | written |
+| 14 | Interaction and controls | written |
 
 ---
 
@@ -2032,10 +2033,22 @@ serialization must meet all three.
   misreading a renamed or repurposed field in silence — the storage
   analogue of the naming discipline §1.2 imposes on transforms.
 
-Nothing here dictates the concrete format — a text key-value form is the
-natural fit, and PSEUDOCODE settles the choice — but a format that fails
-any of the three constraints above cannot serve, however convenient it
-otherwise looks.
+The concrete format is **TOML**, and it meets all three constraints. It is
+a text key-value form built for human-authored configuration, so the
+authored quantities read cleanly and — unlike JSON — the file may carry
+comments that annotate a demonstration, which suits a scenario an
+instructor hands to students. Unit-bearing strings are ordinary TOML
+strings; a `schema_version` key carries the version; and TOML floats are
+IEEE-754 doubles that round-trip exactly when written with
+shortest-round-trip formatting, so the resolved physics fields survive a
+save and load unchanged. Its one cost is that the standard library reads
+TOML (`tomllib`, Python 3.11+, with the `tomli` backport on 3.10) but does
+not write it, so a small serialization dependency is added for saving
+(ARCHITECTURE §9.1) — minor beside the readability a hand-editable
+scenario gains. PSEUDOCODE fixes the exact key layout; the format itself
+is settled here. A format that failed any of the three constraints could
+not serve however convenient it looked, and this is the one that meets
+them.
 
 ---
 
@@ -2076,22 +2089,23 @@ continuation exactly. §12.5 builds directly on this.
 ### 12.2 Retention observes; it never writes back
 
 Retention is strictly read-only with respect to the state, exactly as the
-conservation monitor is (§7.5). It receives the states the engine emits,
-keeps some, and serves them back for replay; it never feeds a value into
-the engine. This is not a stylistic preference but a requirement of
-ARCHITECTURE §6.4: if replaying, or enabling retention at all, could
-alter a later state, then turning replay on or off would change the
-physics, and the determinism guarantee would be false. Retention sits on
-the reading side of the loop with the monitor and the renderer, not on
-the computing side with the integrator and the torque sum.
+conservation monitor is (§7.5). The history is written to and read back
+for replay, but no value in it ever feeds the derivative that advances the
+motion. This is not a stylistic preference but a requirement of
+ARCHITECTURE §6.4: if replaying, or enabling retention at all, could alter
+a later state, then turning replay on or off would change the physics, and
+the determinism guarantee would be false.
 
-It follows that retention is naturally expressed through the sink boundary
-(ARCHITECTURE §5.2). The engine emits to a sink; a **retaining sink**
-holds a bounded window of what it receives and optionally forwards the
-overflow onward. Because §5.2 already allows several sinks at once,
-retention composes with recording and rendering rather than complicating
-the engine, which stays ignorant of what becomes of the states it
-produces.
+The buffer that holds the history is `dynamics/trajectory.py` (ARCHITECTURE
+§3.3), the state-history data structure the engine writes to and
+`time_control.py` reads from to drive replay — the "re-read stored states"
+row of ARCHITECTURE §6.3. It lives beside the integrator but holds no
+derivative and influences no future step, which is what makes the
+read-only property above a fact about data flow rather than about where
+the module sits. The retention *policies* of §12.3–§12.5 are this buffer's
+behavior. Preserving the whole history rather than a bounded window is a
+separate path that goes through the sink boundary (ARCHITECTURE §5.2), and
+§12.6 takes it up.
 
 ### 12.3 What a retained sample holds
 
@@ -2114,10 +2128,11 @@ else recomputes pointwise; only the running balance carries history.
 
 ### 12.4 The default: a bounded ring buffer
 
-The interactive default is a ring buffer of exact states sized by the
-retention limit of §11.6. It holds the most recent window of the run at
-full temporal resolution, one stored sample per substep, and when it
-fills, each new sample overwrites the oldest. The cost is a fixed block
+The interactive default is a ring buffer of exact states — the bounded
+form of the `dynamics/trajectory.py` buffer — sized by the retention limit
+of §11.6. It holds the most recent window of the run at full temporal
+resolution, one stored sample per substep, and when it fills, each new
+sample overwrites the oldest. The cost is a fixed block
 of memory proportional to the window length, and the per-step work is
 constant: append, and advance a pointer.
 
@@ -2160,19 +2175,23 @@ remains one re-integration away.
 
 When a run must be kept in full — to export a long span as video
 (Goal 11), or to hand a complete session to the batch tier — the bounded
-window spills rather than discards. On overflow the retaining sink of
-§12.2 forwards the evicted samples to a downstream sink instead of
-overwriting them, and `hdf5_sink` (ARCHITECTURE §3.7) writes them to
-disk. Memory stays bounded at the window size while the disk accumulates
-the entire trajectory, and a replay draws the recent past from memory and
-the deep past from the file.
+window of §12.4 is not enough, and the whole stream is preserved through
+the sink boundary. Alongside the in-memory `trajectory.py` buffer, the
+engine emits every state to a recording sink, and `hdf5_sink`
+(ARCHITECTURE §3.7) writes the full stream to disk. Memory stays bounded
+at the window size while the disk accumulates the entire trajectory, and a
+replay draws the recent past from the in-memory buffer and the deep past
+from the file. Because `dynamics/` may not import `sinks/` (ARCHITECTURE
+§4), this fan-out to a recording sink is arranged at the loop level, not by
+the buffer reaching upward to a sink itself.
 
 This is the point where the two tiers meet in one mechanism. The batch
-tier *is* an engine whose sink is `hdf5_sink` and nothing else; an
-interactive session that spills is the same engine with a ring buffer in
-front of the same sink. Recording a live session, which ARCHITECTURE §5.2
-describes as attaching several sinks at once, is therefore not a separate
-feature but this policy with the downstream sink always attached.
+tier *is* an engine whose only sink is `hdf5_sink`; an interactive session
+that records is the same engine with a bounded `trajectory.py` window in
+memory and an `hdf5_sink` attached besides. Recording a live session,
+which ARCHITECTURE §5.2 describes as attaching several sinks at once, is
+therefore not a separate feature but that same sink present from the
+start.
 
 ### 12.7 Why the limit is recorded, when the trajectory is not affected
 
@@ -2358,3 +2377,87 @@ geometry was computed in physical coordinates with no drawing mixed in,
 the interactive tier can wrap it in a scene description and the batch tier
 can serialize it untouched, from the one set of numbers the physics
 produced.
+
+---
+
+## 14. Interaction and Controls
+
+This is the surface a student actually touches, and it is where VISION
+Goals 7 and 8 — real-time manipulation, and control over time — become
+concrete. Following the chain's division of labor, ARCHITECTURE §3.8 names
+the tool (`ui/controls.py`, the interactive widgets and their bindings)
+and this section specifies in prose how those controls behave;
+PSEUDOCODE will give the bindings language-agnostically. One idea governs
+the whole section: a control may change what the engine is *asked* to run,
+or what is *shown* of a run, but it never reaches into a trajectory in
+flight.
+
+### 14.1 Two kinds of control
+
+The controls fall into two groups, and the split is the physics/presentation
+division of §11.2 seen from the user's side.
+
+- **Scenario-editing controls** set the body, the initial conditions, the
+  torque models, and the fidelity knobs — everything in the physics zone
+  of §11.2. Editing one does not mutate the running motion. Per §3.8 a
+  change of body *constructs a new body*, and more generally it constructs
+  a new scenario (§11) that the engine runs from its initial condition.
+  The running trajectory is immutable; a new setting is a new run.
+- **Time controls** — pause, single-step, slow motion, fast forward, and
+  replay (Goal 8) — change only the pace and direction of display, mapped
+  entirely onto the substep-count model of ARCHITECTURE §6.3. None alters
+  `dt`, because changing `dt` would change the trajectory (ARCHITECTURE
+  §6.3), so a student slowing a Dzhanibekov flip watches the identical
+  flip, not a differently integrated one.
+
+### 14.2 Read-only to the physics, except by making a new scenario
+
+The interaction layer never writes into the seven-number state. Like the
+conservation monitor (§7.5) and retention (§12.2), it sits outside the
+computing core; its only channel to the physics is to hand the engine a
+new scenario to run. That indirection is what preserves the determinism
+guarantee (ARCHITECTURE §6.4): the trajectory depends on the scenario
+alone, never on which widgets were touched or when. The import rule
+(ARCHITECTURE §4) makes the separation structural — `ui/` sits at the top
+of the dependency graph and imports downward, and nothing in the physics
+core imports `ui/`.
+
+### 14.3 Live manipulation, and the scenario as source of truth
+
+Goal 7 asks that manipulating the body or its conditions produce an
+immediate response. *Immediate* here means at the next rendered frame, not
+at a guaranteed wall-clock rate (ARCHITECTURE §6.2): the fixed-step loop
+proceeds as fast as the machine allows, and the ratio of simulated to
+elapsed time is displayed rather than faked (§7.3). Because every edit
+resolves into a scenario (§11), any state a student reaches by interactive
+fiddling is captured exactly and can be replayed or handed to the batch
+tier — the interaction layer *produces* scenarios, and the scenario is
+always the reproducible record (Goal 11). Exploration and reproducibility
+are thus the same mechanism seen from two ends, which is the promise
+ARCHITECTURE §2 makes when it calls the scenario the bridge between tiers.
+
+### 14.4 The replay scrubber
+
+The replay control reads history rather than stepping. It scans
+`dynamics/trajectory.py` through `time_control.py` (§12, ARCHITECTURE
+§3.3), drawing stored states for the recent past and, past the retained
+window, re-integrating from the scenario or a keyframe (§12.4, §12.5).
+Scrubbing is therefore a read over the retained buffer, never a rewind of
+the engine, and it cannot perturb a single computed state — the §12.2
+read-only property surfacing at the control level. This is why "replay"
+appears in the time-control table of ARCHITECTURE §6.3 as *re-reading
+stored states* rather than as running the engine backward, which no
+dissipative scenario (§5.4) could do anyway.
+
+### 14.5 Controls that scale, and honest labels
+
+A few controls do not select physics but scale it for visibility —
+exaggerating a weak torque, compressing a slow timescale, or choosing the
+ellipsoid's drawing size (§13.5). These are legitimate, and VISION
+Principle 12 governs them: whenever a control moves a quantity off its
+physical value, the factor is stated on screen. A slider that silently
+exaggerated would mislead in exactly the way an undisclosed numerical
+drift does (§7), so the scaling controls here and the labels of §13.5 are
+two views of one requirement — the last place in the tool where Principle
+2's discipline, that nothing false is shown as physics, reaches the
+student's hand.

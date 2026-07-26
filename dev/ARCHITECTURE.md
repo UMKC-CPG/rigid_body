@@ -571,6 +571,7 @@ Python 3.10 or newer, with a NumPy-based numerical core.
 | `h5py` 3.15.1 | present | HDF5 output for the batch tier |
 | `matplotlib` 3.10.3 | present | Auxiliary plots |
 | `pint` | **to be added** | Units at the boundary (§5.5) |
+| `tomli-w` | **to be added** | Writing TOML scenario files (DESIGN §11) |
 | `pytest` | required | Test suite |
 | `ffmpeg` 6.0 | module | Video export (Goal 11) |
 | `paraview` 6.1.1 | module | Post-hoc visualization of HDF5/XDMF |
@@ -579,6 +580,11 @@ Python 3.10 or newer, with a NumPy-based numerical core.
 Deliberately *not* dependencies yet: `numba` and `mpi4py` (absent on the
 cluster; both belong to the deferred compiled-kernel work of §5.4), and
 any GUI toolkit beyond what vedo provides.
+
+*Reading* TOML scenarios needs no new dependency on Python 3.11+, where
+`tomllib` is in the standard library; on the 3.10 floor the `tomli`
+backport supplies it. Only *writing* needs `tomli-w`, which is why the
+table lists the writer alone.
 
 **No GPU is required.** Measurements in §9.3 established that software
 rendering is sufficient, so neither a GPU allocation nor VirtualGL is a
@@ -591,7 +597,7 @@ prerequisite for the interactive tier.
 python3 src/scripts/rbsim.py
 
 # Tier 2: batch high-fidelity run from a saved scenario (future).
-python3 src/scripts/rbbatch.py my_scenario.json
+python3 src/scripts/rbbatch.py my_scenario.toml
 
 # Tests.
 pytest tests/ -v
