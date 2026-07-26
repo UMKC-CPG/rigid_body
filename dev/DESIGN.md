@@ -20,7 +20,7 @@
 | 8 | Analytic solutions | written |
 | 9 | Poinsot geometry | written |
 | 10 | Frame presentation | written |
-| 11 | Scenario schema | not yet written |
+| 11 | Scenario schema | written |
 | 12 | Trajectory retention | not yet written |
 | 13 | Scene description and palettes | not yet written |
 
@@ -1861,3 +1861,178 @@ and told apart by the palette. Which colors carry which frame, and the
 relative sizes of the two panels, are labeled presentation choices
 deferred to §13 (VISION Principles 6 and 12), exactly as §9.2 deferred
 the ellipsoid's scale.
+
+---
+
+## 11. Scenario Schema
+
+Everything the tool computes flows from one object: the scenario. VISION
+Goal 11 asks that a complete demonstration be saved and restored exactly,
+so an instructor can hand students the precise setup shown in lecture and
+recover it years later; ARCHITECTURE §2 makes that same object the bridge
+between the interactive and batch tiers. This section fixes what a
+scenario contains and the single rule its contents obey. It does not pin
+a file format down to punctuation — that is a PSEUDOCODE and code
+concern — but it does fix the constraints any format must satisfy.
+
+### 11.1 Plain data, and the one rule
+
+A scenario is plain data with no behavior (ARCHITECTURE §3.6). It holds
+no functions, no live objects, and no reference to the machine it was
+written on; that is what lets it cross the tier boundary and travel
+between users. `scenario.py` defines the structure and `serialization.py`
+saves and restores it (ARCHITECTURE §3.6).
+
+One rule governs membership, and it comes straight from ARCHITECTURE §7:
+
+> Any value that can affect the computed trajectory must live in the
+> scenario, and the scenario records the *resolved* value that was used —
+> never merely a reference to a default that another machine might
+> resolve differently.
+
+The rc file (ARCHITECTURE §7) may supply a default and a command-line
+argument may override it, but once resolved the value is written into the
+scenario. Otherwise the same file would produce different physics on
+different machines, defeating both Goal 11 and the tier bridge. The test
+of a correct scenario is blunt: handing the file to another user on
+another machine must reproduce the trajectory bit for bit
+(ARCHITECTURE §6.4).
+
+### 11.2 Two zones: what is computed, and what is shown
+
+The fields divide cleanly into two kinds, and keeping them apart is what
+makes the reproducibility guarantee precise.
+
+- **Physics** — the body, the initial conditions, the torque models, and
+  the integrator and fidelity settings. These *determine the trajectory*,
+  and the bit-for-bit guarantee of §11.1 attaches to them.
+- **Presentation** — the viewpoint, the choice of frame and of the
+  simultaneous-or-switching layout (§10.6), and the palette selection
+  (§13). These fix only *what is shown* of a trajectory already
+  determined by the physics fields.
+
+The division is not cosmetic. §10.6 insisted that moving the camera is
+never a change of frame and never a change of physics; here that becomes
+a structural fact — the presentation zone can be edited freely and the
+trajectory does not move. A regression test (ARCHITECTURE §8) can assert
+exactly this: perturb any presentation field, and the computed states are
+unchanged. Only the physics zone feeds the engine.
+
+### 11.3 The body
+
+A body enters the schema in two layers, because two different consumers
+need two different things.
+
+- The **specification** is the human-editable handle: which primitive
+  (§3.2), its dimensions and density, or a direct entry of the principal
+  moments (§3.6), together with any pivot shift (§3.5). This is what a
+  student edits and what the renderer needs in order to draw a shape.
+- The **resolved inertial summary** is what the dynamics actually
+  consume: the total mass, the center of mass, the principal moments, and
+  the principal axes — exactly the four items the provider boundary of
+  §3.7 exposes, and nothing more. ARCHITECTURE §7 requires this resolved
+  value be recorded, and §3.8 makes it safe to freeze, since these are
+  computed once at construction and never change while the body exists.
+
+Recording both, rather than the specification alone, honors Principle 10:
+the dynamics saw only the tensor, so the tensor is what reproduces the
+run, whatever method produced it. On reload the provider recomputes the
+summary from the specification and the two are checked against each other
+— the §7.6 consistency oracle applied to storage. Agreement is the common
+case; a mismatch means the specification, the provider, or the file has
+drifted, and it is reported rather than silently resolved in favor of
+either. A body given by moments alone (§3.6) has no shape specification,
+and its summary simply *is* the entry.
+
+Meshes and arbitrary densities (VISION Future Direction 1) will need the
+geometry itself captured or referenced, not just a primitive's name; the
+two-layer split already anticipates them, since only the specification
+layer grows while the resolved summary the dynamics consume stays the
+same four items.
+
+### 11.4 Initial conditions
+
+The integrated state is the seven numbers of §2.1 — a scalar-first
+body-to-space quaternion and the body-frame angular velocity — but those
+are not what a student naturally sets. The schema therefore authors the
+initial orientation in readable terms, an Euler-angle triple (§1.3) or an
+axis and angle, and resolves it to the quaternion (§2.2) the integrator
+consumes. As everywhere in this section, the resolved quaternion is
+recorded alongside the authored form, so a reload reproduces the state
+without re-running the conversion, and the double-cover sign (§2.2) is
+thereby pinned rather than left to a library.
+
+The initial angular velocity is given in body components, matching the
+frame Euler's equations use (§4.1). One subtlety is mandatory rather than
+optional: the Dzhanibekov demonstration (§4.4) requires a deliberate tilt
+off the intermediate axis, and §4.4 insisted that tilt be recorded in the
+scenario rather than supplied by rounding noise. This is where it is
+recorded. A run that relied on floating-point dust to start its flip
+would be irreproducible, in violation of Goal 11, so the perturbation is
+part of the authored initial condition and travels with the file.
+
+### 11.5 Torque models and their order
+
+The torque models in force are recorded as an ordered list, each entry
+naming a model and its parameters — the gravity vector and pivot lever
+arm for the heavy top (§5.3), the coefficient for viscous damping (§5.4).
+An empty list is torque-free motion (§5.2); there is no separate flag for
+it, matching the decision that free motion is not a special case in the
+code.
+
+The list is **ordered**, and that order is part of the recorded physics,
+not an incidental detail. §5.6 showed that floating-point addition is not
+associative, so summing the same torques in a different sequence can give
+a bitwise-different total and break the guarantee of §11.1. The scenario
+fixes the order and the engine iterates it as written. This is the §5.6
+concern discharged at the level of storage: the order is not merely used
+consistently within one run, it is persisted so that every future run of
+the file agrees.
+
+### 11.6 Integrator, fidelity, and retention
+
+Which integrator runs is a scenario setting, not a hard-wired choice
+(§6.1), so the schema names it — RK4 for the classroom, a
+structure-preserving scheme for the long regime (§6.5) — together with
+the fidelity knobs ARCHITECTURE §2 gathers into one set: the time step
+`dt`, the number of substeps per rendered frame (ARCHITECTURE §6.3), and
+the total integration span the run covers. An implicit integrator (§6.5)
+additionally records its deterministic stopping rule — a fixed iteration
+count or an ordered convergence threshold — because without it the same
+file could take a different number of inner iterations and diverge, the
+§5.6 hazard reappearing inside the solver.
+
+The trajectory-retention limit (§6.5) is recorded here as well, since a
+replay is reproducible only if the history it replays was bounded the
+same way. What that limit *means*, and what happens on overflow, is the
+subject of §12; the schema's duty is only to carry the resolved limit so
+that the run can be reproduced.
+
+### 11.7 Units, precision, and versioning
+
+Three format constraints follow from commitments made elsewhere, and any
+serialization must meet all three.
+
+- **Units live at this boundary and nowhere below it** (Principle 11,
+  ARCHITECTURE §5.5). Authored quantities carry human-readable unit
+  strings — `"0.5 kg*m^2"`, `"9.81 m/s^2"` — parsed to SI floats exactly
+  once, when the scenario loads, by the one module permitted to touch the
+  units library. Below `scenario/` everything is bare SI (§2.1), so the
+  resolved fields the engine reads carry no unit objects at all.
+- **Resolved physics fields round-trip exactly.** The bit-for-bit
+  guarantee of §11.1 requires the SI floats determining the trajectory to
+  survive a save-and-load unchanged. A text format meets this only if it
+  writes those floats at full precision — enough significant digits to
+  recover the identical IEEE double — so the human-readable form and the
+  exact form coexist rather than compete.
+- **The schema carries a version.** Goal 11 asks that a setup be
+  recoverable in later years, which means a file outlives the tool
+  version that wrote it. A version tag lets a future reader interpret an
+  old file correctly, or refuse it with a clear message, rather than
+  misreading a renamed or repurposed field in silence — the storage
+  analogue of the naming discipline §1.2 imposes on transforms.
+
+Nothing here dictates the concrete format — a text key-value form is the
+natural fit, and PSEUDOCODE settles the choice — but a format that fails
+any of the three constraints above cannot serve, however convenient it
+otherwise looks.
