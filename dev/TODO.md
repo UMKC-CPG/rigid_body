@@ -28,13 +28,12 @@ questions worth carrying forward.
 
 **Sections still to write** (see the Contents table in `DESIGN.md`):
 
-- [ ] §10 Frame presentation — one motion in body and space frames at
-      once (VISION Goal 5). Picks up directly from the polhode /
-      herpolhode duality closed out in §9.5. **This is the next section.**
 - [ ] §11 Scenario schema — the concrete data structure a scenario
       serializes to (ARCHITECTURE §3.6, §7); must record everything that
       affects the trajectory, including the fixed torque-model order
-      (§5.6) and the retention limit (§12).
+      (§5.6) and the retention limit (§12). It also records the frame
+      presentation and viewpoint that §10.6 defers to it. **This is the
+      next section.**
 - [ ] §12 Trajectory retention — the history/replay buffer policy
       deferred from ARCHITECTURE §6.5 (ring buffer, downsampling, or
       spilling to the sink).
@@ -44,8 +43,9 @@ questions worth carrying forward.
 
 **Open items carried forward:**
 
-- Sections §1–§9 are drafted and committed. The §8.4 elliptic solution
-  is numerically verified (`dev/spikes/free_top_elliptic.py`, passing).
+- Sections §1–§10 are drafted; §1–§9 are committed. The §8.4 elliptic
+  solution is numerically verified (`dev/spikes/free_top_elliptic.py`,
+  passing).
 - After DESIGN is complete: tag `v0.3-design` (ARCHITECTURE §10), then
   begin `PSEUDOCODE.md`.
 
