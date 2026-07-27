@@ -78,8 +78,12 @@ table; this list records only what remains.
 - [x] §3 State and derived quantities (DESIGN §2.1, §2.5) — the state
       record and the momentum/energy read-outs, with the torque-free
       invariants the monitor and Poinsot lean on.
-- [ ] §4 Inertia and body construction (DESIGN §3). **Next section.**
-- [ ] §5–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+- [x] §4 Inertia and body construction (DESIGN §3) — the Body record,
+      the three physical assertions, the closed-form/provider seam, the
+      diagonalization with handedness and degeneracy fixes, the pivot
+      shift, classification, and the build_body constructor.
+- [ ] §5 Equations of motion (DESIGN §4). **Next section.**
+- [ ] §6–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
       order, ending with §12 (the exact TOML key layout, per §11.7) and
       §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
 

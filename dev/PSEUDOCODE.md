@@ -78,7 +78,7 @@ is an implementation detail of the code level, not of this one.
 | 1 | The simulation loop | §4.2, §6, §7, §12, §14 | written |
 | 2 | Orientation mathematics | §1.3, §2.2, §2.4, §2.6 | written |
 | 3 | State and derived quantities | §2.1, §2.5 | written |
-| 4 | Inertia and body construction | §3 | not yet written |
+| 4 | Inertia and body construction | §3 | written |
 | 5 | Equations of motion | §4 | not yet written |
 | 6 | Torque models | §5 | not yet written |
 | 7 | Integrators | §6 | not yet written |
@@ -537,3 +537,235 @@ the Poinsot construction is built from (§10), and among the sharpest
 oracles the test suite has (ARCHITECTURE §8.2). When a torque is present
 they are no longer conserved, and the monitor reports drift rather than
 asserting constancy.
+
+---
+
+## 4. Inertia and Body Construction
+
+This section builds the body: it turns a shape, or three directly given
+numbers, into the immutable record the rest of the program uses. DESIGN §3
+is its source throughout. The governing idea is DESIGN §3.8 — everything
+here is computed **once**, at construction, and never recomputed while the
+simulation runs, because in the body frame the inertia tensor is constant
+by definition, and that constancy is exactly what "rigid" means. After
+this section runs, the downstream code sees three moments and their axes
+and never asks where they came from (ARCHITECTURE §5.1).
+
+### 4.1 The body record
+
+`build_body` (§4.7) returns the record `body` that §1 threads through the
+loop. It holds only quantities fixed in the body frame.
+
+```
+record Body:
+    principal_moments     # (I_1, I_2, I_3), the diagonal inertia
+    principal_axes        # 3 columns: body axes in build coordinates
+    total_mass            # M
+    center_of_mass        # in build coordinates
+    top_class             # SPHERICAL | SYMMETRIC | ASYMMETRIC (4.6)
+    intermediate_axis     # index 1..3 for an asymmetric top, else none
+    geometry              # drawable shape, or none for direct entry
+```
+
+### 4.2 Physical validity: the three assertions
+
+Every inertia tensor a physical body can have obeys three properties
+(DESIGN §3.1). They are checked wherever a tensor or a set of moments is
+produced, because a violation means the numbers are not an inertia tensor
+at all.
+
+```
+function validate_inertia_tensor(tensor):
+    # Symmetry is checked on the FULL tensor, before it is diagonalized
+    # (DESIGN 3.1). The other two properties are checked on the moments
+    # that diagonalization produces, by validate_moments below.
+    assert is_symmetric(tensor)
+
+function validate_moments(moments):
+    (I_1, I_2, I_3) <- moments
+    # Positive definiteness: every principal moment is strictly > 0.
+    if not (I_1 > 0 and I_2 > 0 and I_3 > 0):
+        reject("a principal moment is not positive: " + moments)
+    # Triangle inequalities. Impossible to violate in nature, easy to
+    # mistype (DESIGN 3.1, 3.6): report WHICH fails and BY HOW MUCH,
+    # rather than integrate nonsense.
+    for (a, b, c) in [(I_1, I_2, I_3), (I_2, I_3, I_1),
+                      (I_3, I_1, I_2)]:
+        if a + b < c:
+            reject("triangle inequality fails: " + a + " + " + b
+                   + " < " + c + ", short by " + (c - a - b))
+```
+
+### 4.3 Closed forms for the primitives, and the provider seam
+
+For a uniform primitive the inertia tensor is a closed form (DESIGN §3.2).
+`analytic_inertia` computes it; a future `numerical_inertia` will integrate
+a density field instead. Both return the **same** triple, so no consumer
+can tell which ran — the provider seam of ARCHITECTURE §5.1.
+
+```
+function inertia_provider(shape, density):
+    # The one operation of ARCHITECTURE 5.1: shape + density -> the
+    # triple below. analytic_inertia is the closed-form implementation.
+    return { mass, center_of_mass, inertia_tensor }
+
+function analytic_inertia(shape, density):
+    # For a primitive in its natural orientation the tensor is DIAGONAL,
+    # so §4.4 solves no eigenproblem in the common case (DESIGN 3.4).
+    mass           <- density * volume_of(shape)
+    center_of_mass <- centroid_of(shape)      # e.g. h/4 up a cone (3.2)
+    moments        <- principal_moments_of(shape, mass)
+    return { mass           = mass,
+             center_of_mass = center_of_mass,
+             inertia_tensor = diagonal_matrix(moments) }
+
+function principal_moments_of(shape, mass):
+    # The closed forms of DESIGN 3.2, keyed by primitive. A few are
+    # shown to fix the pattern; the COMPLETE, numerically-verified table
+    # is DESIGN 3.2 and is the single source of truth for the constants.
+    if shape is Sphere(a):
+        m <- (2/5)*mass*a^2
+        return (m, m, m)
+    if shape is Ellipsoid(a, b, c):
+        return ( (mass/5)*(b^2 + c^2),
+                 (mass/5)*(c^2 + a^2),
+                 (mass/5)*(a^2 + b^2) )
+    if shape is Cylinder(a, h):               # symmetry axis is 3
+        return ( (mass/12)*(3*a^2 + h^2),
+                 (mass/12)*(3*a^2 + h^2),
+                 (1/2)*mass*a^2 )
+    # ... box, cone, and the five Platonic solids: see DESIGN 3.2.
+    # Every Platonic solid is isotropic, I_1 = I_2 = I_3 (DESIGN 3.3),
+    # which is why a cube tumbles exactly as a sphere does.
+```
+
+### 4.4 Principal axes: diagonalization done once
+
+The body frame is the principal-axis frame (DESIGN §1.1), so the tensor
+must be made diagonal. The common case is free; the general case solves one
+symmetric eigenproblem, with two corrections DESIGN §3.4 requires.
+
+```
+function principal_frame_of(inertia_tensor, geometry):
+    if is_diagonal(inertia_tensor):
+        # Primitive in natural orientation: axes are the coordinate
+        # axes, no eigenproblem, no numerical error (DESIGN 3.4).
+        return { moments = diagonal_of(inertia_tensor),
+                 axes    = identity_axes }
+
+    (moments, axes) <- symmetric_eigensolver(inertia_tensor)
+
+    # Correction 1 -- handedness (DESIGN 3.4). A symmetric solver may
+    # return a left-handed set; a reflection is not a rotation, which is
+    # the silent-inverse failure of 1.2 in disguise.
+    if determinant(axes) < 0:
+        axes <- negate_one_column(axes)
+
+    # Correction 2 -- degenerate subspaces (DESIGN 3.4). When moments
+    # coincide the axes are not unique and a solver returns an arbitrary
+    # basis that can jump between calls. Pin the degenerate subspace to
+    # the geometric symmetry axis so nothing jitters for no reason.
+    axes <- canonicalize_degenerate_axes(moments, axes, geometry)
+
+    return { moments = moments, axes = axes }
+```
+
+Diagonalization happens **once**, at construction (DESIGN §3.4, §3.8); the
+stored axes are reused every frame and never recomputed, precisely so the
+arbitrary basis a solver might pick cannot become motion on screen (VISION
+Principle 2).
+
+### 4.5 Shifting to a pivot
+
+A heavy top rotates about a fixed pivot, not its center of mass, so its
+tensor is shifted by the parallel-axis theorem (DESIGN §3.5). The shifted
+tensor is in general **no longer diagonal** in the old axes, so it must be
+re-diagonalized by §4.4 — this is not optional, because Euler's equations
+(§5) assume a principal-axis frame.
+
+```
+function parallel_axis_shift(inertia_com, mass, displacement):
+    # DESIGN 3.5:  I_pivot = I_com + M (|d|^2 * Identity - d (outer) d),
+    # with d the vector from the center of mass to the pivot.
+    distance_squared <- dot(displacement, displacement)
+    correction <- mass * (distance_squared * identity_3x3
+                          - outer_product(displacement, displacement))
+    return inertia_com + correction
+```
+
+### 4.6 Classification
+
+The pattern of equality among the moments decides what motion is possible
+(DESIGN §3.3), so it is named once and stored on the body. For the
+asymmetric top the **intermediate** axis is identified explicitly (DESIGN
+§1.4), because the Dzhanibekov flip (VISION Goal 2) is an instability about
+that axis and exists only when the three moments are strictly distinct.
+
+```
+function classify_top(moments):
+    (I_1, I_2, I_3) <- moments
+    equal_12 <- approximately_equal(I_1, I_2, MOMENT_TOLERANCE)
+    equal_23 <- approximately_equal(I_2, I_3, MOMENT_TOLERANCE)
+    equal_13 <- approximately_equal(I_1, I_3, MOMENT_TOLERANCE)
+
+    if equal_12 and equal_23:            # all three equal
+        return (SPHERICAL, none)         # no free precession at all
+    if equal_12 or equal_23 or equal_13: # exactly two equal
+        return (SYMMETRIC, none)         # steady precession
+    # All three distinct: the only class with the full Poinsot picture.
+    return (ASYMMETRIC, index_of_median(I_1, I_2, I_3))
+```
+
+### 4.7 build_body: tying it together
+
+The constructor dispatches on how the body was specified — a shaped
+primitive through the provider seam, or three moments entered directly
+(DESIGN §3.6, for the Chandler wobble, where only the ratio matters and a
+body given this way has no geometry to draw). Either path ends in one
+validated, classified, immutable record.
+
+```
+function build_body(scenario):
+    specification <- scenario.body
+
+    if specification is direct moments:              # DESIGN 3.6
+        moments <- (specification.I_1, specification.I_2,
+                    specification.I_3)
+        validate_moments(moments)                    # reject if unphysical
+        principal_moments <- moments
+        principal_axes    <- identity_axes           # already principal
+        mass              <- specification.mass
+        center_of_mass    <- origin
+        geometry          <- none                    # nothing to draw
+
+    else:                                            # a shaped primitive
+        (mass, center_of_mass, inertia_tensor)
+            <- inertia_provider(specification.shape,
+                                specification.density)
+        validate_inertia_tensor(inertia_tensor)      # symmetry (4.2)
+        if specification has a pivot:                # DESIGN 3.5
+            displacement <- specification.pivot - center_of_mass
+            inertia_tensor <- parallel_axis_shift(inertia_tensor,
+                                                  mass, displacement)
+        frame <- principal_frame_of(inertia_tensor,  # 4.4; may shortcut
+                                    specification.shape)
+        principal_moments <- frame.moments
+        principal_axes    <- frame.axes
+        validate_moments(principal_moments)          # positivity, triangle
+        geometry          <- specification.shape
+
+    (top_class, intermediate_axis) <- classify_top(principal_moments)
+
+    # Rigidity as an invariant (DESIGN 3.8): the record is immutable, and
+    # changing any of it -- an edge length, the pivot, the moments --
+    # builds a NEW body rather than mutating this one, which keeps the
+    # scenario record (§11) unambiguous about which body ran.
+    return immutable Body {
+        principal_moments = principal_moments,
+        principal_axes    = principal_axes,
+        total_mass        = mass,
+        center_of_mass    = center_of_mass,
+        top_class         = top_class,
+        intermediate_axis = intermediate_axis,
+        geometry          = geometry }
+```
