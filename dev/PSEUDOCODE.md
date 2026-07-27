@@ -81,7 +81,7 @@ is an implementation detail of the code level, not of this one.
 | 4 | Inertia and body construction | §3 | written |
 | 5 | Equations of motion | §4 | written |
 | 6 | Torque models | §5 | written |
-| 7 | Integrators | §6 | not yet written |
+| 7 | Integrators | §6 | written |
 | 8 | Conservation monitor | §7 | not yet written |
 | 9 | Analytic solutions | §8 | not yet written |
 | 10 | Poinsot geometry | §9 | not yet written |
@@ -132,11 +132,10 @@ function advance_one_substep(state, time, dt, body, torque_models,
 Two notes tie this back to the design. The derivative *must* be pure
 (DESIGN §4.2, §5.1) because the integrator evaluates it at trial states
 off the trajectory; the closure above captures only immutable data, so
-purity holds. And the signature threads `time` — a small refinement of the
-`advance(state, dt, derivative)` written in DESIGN §6.1 — because a
-time-dependent torque (DESIGN §5.7) needs the absolute time at each
-trial point; for the torque-free and gravity cases the argument is simply
-unused.
+purity holds. And the signature threads `time`, as DESIGN §6.1
+specifies, because a time-dependent torque (DESIGN §5.7) needs the
+absolute time at each trial point; for the torque-free and gravity cases
+the argument is simply unused.
 
 ### 1.2 The interactive frame loop
 
@@ -1055,3 +1054,199 @@ additions (DESIGN §5.7). Two are anticipated, and both already fit the
 - **Driven or time-dependent torque**, for forced-precession
   demonstrations, which is the reason `time` sits in the signature though
   no shipping model reads it yet.
+
+---
+
+## 7. Integrators
+
+The integrator is the one component whose *errors* are meant to be seen
+(DESIGN §6): elsewhere a wrong number is a bug, but here a nonzero error is
+expected, and VISION Principle 2 asks only that it be measured and
+disclosed. Two threads from earlier sections converge here — the
+quaternion renormalization §2.2 deferred (§7.3), and the two accuracy
+regimes ARCHITECTURE §8.4 named, which call for *different kinds* of
+integrator rather than merely different step sizes (§7.4, §7.5).
+
+### 7.1 The selectable-strategy interface
+
+Which integrator runs is a scenario setting, not a hard-wired choice
+(DESIGN §6.1). Every integrator presents the same shape and is swappable
+per scenario, and eventually per language behind the kernel boundary
+(ARCHITECTURE §5.4):
+
+```
+advance(state, time, dt, derivative_function) -> new_state
+```
+
+This threads `time`, matching DESIGN §6.1: a multi-stage method evaluates
+the derivative at trial times `time + c*dt`, and a time-dependent torque
+(DESIGN §5.7) reads that absolute time. For the torque-free and gravity
+cases the argument is simply unused. The integrator knows nothing of
+bodies, torques, or rendering; all of that is already sealed inside
+`derivative_function` (§5.2). At this level the integrator advances the
+two-field `State` record of §3.1 through the field-wise arithmetic below;
+the flat seven-number packing DESIGN §6.1 mentions is the code-level
+kernel interface (ARCH §5.4), not modeled here.
+
+```
+function state_scale(factor, s):
+    # Scale each field of a state (or of a derivative, which shares the
+    # state's two-field shape, §5.2).
+    return { body_to_space_quaternion =
+                 scale_quaternion(factor, s.body_to_space_quaternion),
+             angular_velocity_body =
+                 factor * s.angular_velocity_body }
+
+function state_add(a, b):
+    # Add two states field-wise (quaternion + quaternion, vector +
+    # vector, each componentwise).
+    return { body_to_space_quaternion =
+                 a.body_to_space_quaternion + b.body_to_space_quaternion,
+             angular_velocity_body =
+                 a.angular_velocity_body + b.angular_velocity_body }
+
+function advance_by(base, factor, rate):
+    # base + factor * rate: a trial state one Euler-like move away.
+    return state_add(base, state_scale(factor, rate))
+```
+
+**The step is fixed, never adaptive** (DESIGN §6.1). An adaptive solver
+chooses its own internal steps to hit a tolerance, coupling the step
+sequence to the trajectory — exactly what ARCHITECTURE §6.2 forbids and
+what would complicate the bit-for-bit reproducibility of §6.4. The
+integrator takes one step of the size the scenario chose.
+
+```
+function select_integrator(scenario):
+    # DESIGN 6.1: the integrator is chosen by the scenario. RK4 is the
+    # interactive default (7.2); a symplectic scheme (7.5) is offered for
+    # long conservative runs and is built when Future Direction 4 nears.
+    if scenario.fidelity.integrator = SYMPLECTIC:
+        return symplectic_integrator      # 7.5
+    return rk4_integrator                 # 7.2, the default
+```
+
+### 7.2 The baseline: fixed-step RK4
+
+The default is the classical fourth-order Runge-Kutta method (DESIGN §6.2).
+It samples the derivative four times per step — once at the start, twice at
+trial midpoints, once at a trial endpoint — and combines them in the
+standard weighting. The two midpoint samples are at trial states *off* the
+trajectory, which is exactly why §5.2 insists the derivative be pure: a
+derivative that accumulated anything across those samples would corrupt the
+step.
+
+```
+function rk4_advance(state, time, dt, derivative_function):
+    k1 <- derivative_function(time,        state)
+    k2 <- derivative_function(time + dt/2, advance_by(state, dt/2, k1))
+    k3 <- derivative_function(time + dt/2, advance_by(state, dt/2, k2))
+    k4 <- derivative_function(time + dt,   advance_by(state, dt,   k3))
+
+    # Standard weighting, field-wise (7.1): k1 + 2 k2 + 2 k3 + k4.
+    weighted_rate <- state_add(
+                         state_add(k1, state_scale(2, k2)),
+                         state_add(state_scale(2, k3), k4))
+    stepped       <- advance_by(state, dt/6, weighted_rate)
+
+    # Restore |q| = 1 once, after the whole step (7.3).
+    return renormalize(stepped)
+```
+
+RK4's global error is order four, `error ~ C * dt^4`. That is a *testable*
+claim, not just a selling point (DESIGN §6.2): halving `dt` must cut the
+error about sixteenfold, and the convergence study of §9 measures the
+observed order against a known solution, supplying a tolerance justified by
+the method rather than tuned until a test passes (ARCHITECTURE §8.4).
+
+### 7.3 Keeping the quaternion a rotation
+
+RK4 does not know `q` must stay on the unit sphere. The kinematic law
+(§2.3) keeps `|q|` constant in exact arithmetic, but a finite step moves
+along the tangent and lands slightly off the sphere; left alone `|q|`
+drifts from one, and a non-unit quaternion applied as a rotation silently
+introduces a scaling (§2.2) — a distortion VISION Principle 2 forbids
+putting on screen unlabeled. The remedy is a projection back onto the
+sphere after each completed step.
+
+```
+function renormalize(state):
+    # The renormalization §2.2 deferred to the integrator. quat_normalize
+    # (2.1) divides by the norm and leaves the SIGN alone, so the
+    # double-cover care of 2.2 is undisturbed.
+    return { body_to_space_quaternion =
+                 quat_normalize(state.body_to_space_quaternion),
+             angular_velocity_body = state.angular_velocity_body }
+```
+
+Two details DESIGN §6.3 stresses. Renormalize **after the whole step, not
+inside the stages**: the four trial quaternions are *meant* to be slightly
+off the sphere, and projecting one mid-step would corrupt the linear
+combination that reconstructs the fourth-order result. And the projection
+**never changes the sign**, since dividing by a positive norm cannot flip
+`q` to `-q`. Projection is right for RK4 precisely because RK4 has no
+structure worth protecting — §7.5 shows the same projection would *damage*
+a structure-preserving integrator, one more place the integrator choice and
+the norm policy are entangled (§2.2).
+
+### 7.4 Two regimes of error
+
+RK4 is excellent and still not enough for every anticipated case, for the
+reason ARCHITECTURE §8.4 drew (DESIGN §6.4). RK4 is not symplectic, so for
+a conservative system its error in the conserved quantities is **secular** —
+it accumulates with time rather than oscillating about the true value. Over
+a classroom demonstration this stays far below the `1e-6` relative bound of
+ARCHITECTURE §8.4, the monitor (§8) discloses it, and Principle 2 is
+satisfied; in this regime RK4 is the right tool, not a compromise.
+
+The long-integration regime differs in kind. A run of ten million rotations
+(VISION Future Direction 4) lasts long enough that a secular error, however
+small per step, grows until it overwhelms the effect being measured, and
+**no reduction of `dt` cures it** — a smaller step lowers the error at any
+fixed time, but the unbounded growth always wins eventually. The fix is not
+a smaller step but a different structural property of the integrator, which
+is why the convergence test of §7.2 (a short run) cannot see this regime,
+and a long-regime test must measure the *growth* of the error across many
+periods (ARCHITECTURE §8.4).
+
+### 7.5 The structure-preserving path
+
+What the long regime needs is a **symplectic** integrator, whose
+conserved-quantity error stays bounded within a fixed envelope forever
+instead of drifting (DESIGN §6.5). It is designed now and built when Future
+Direction 4 is approached; the selectable interface of §7.1 is what lets it
+drop in without disturbing anything upstream. Two candidate schemes are
+recorded, both standard in geometric integration:
+
+- **The implicit midpoint rule.** A second-order symplectic method
+  preserving every *quadratic* first integral exactly (to round-off). This
+  fits the problem unusually well: `|q|^2 = 1` is quadratic, so the
+  orientation stays on the sphere with **no renormalization at all** —
+  applying §7.3's projection here would actively damage the bounded-error
+  behavior. For torque-free motion the energy and `|L|^2` are quadratic too
+  and are likewise preserved to round-off. Its step solves an implicit
+  equation, `new_state = state + dt * derivative(time + dt/2,
+  midpoint(state, new_state))`, by iteration — far costlier than RK4's four
+  explicit samples, acceptable in the batch tier but not as the interactive
+  default.
+- **A splitting integrator for the free rigid body.** The motion is split
+  into exactly-solvable rotations about the three principal axes, composed
+  in a symmetric sequence; the result is explicit, symplectic, and
+  conserves the angular-momentum magnitude by construction — the natural
+  choice where the implicit solve is too costly.
+
+A determinism caution attaches to any implicit scheme (ARCHITECTURE §6.4):
+its per-step iteration must stop on a **fixed, deterministic** criterion — a
+fixed iteration count, or a threshold checked in a fixed order — so the same
+scenario yields the identical trajectory every time. This is the §6.6
+floating-point concern reappearing inside the integrator.
+
+Finally, symplecticity is a property of *conservative* systems, coupling
+the integrator choice back to the torque models of §6. Torque-free motion
+and the heavy top under gravity are conservative and are what this path is
+for; viscous damping removes energy deliberately, leaving no symplectic
+structure to preserve, so for dissipative scenarios the drift that matters
+is departure from the *rate* `d(energy)/dt = Gamma . omega` (§5.5), and RK4
+measured against that rate is the appropriate tool. The scenario selects an
+integrator suited to its physics — the whole reason §7.1 makes the
+integrator a selectable strategy.

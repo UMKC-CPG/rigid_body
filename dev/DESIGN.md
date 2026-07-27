@@ -1026,14 +1026,18 @@ version can replace it later.
 Every integrator therefore presents the same shape:
 
 ```
-advance(state, dt, derivative_function) -> new_state
+advance(state, time, dt, derivative_function) -> new_state
 ```
 
-It receives the flat seven-component array of §2.1, a time step, and the
-pure derivative function of §4.2, and returns the advanced array. It
-knows nothing about bodies, torques, or rendering; those are already
-sealed inside `derivative_function` by the time the integrator sees it.
-That narrowness is what lets the strategy be swapped per scenario and,
+It receives the flat seven-component array of §2.1, the current time, a
+time step, and the pure derivative function of §4.2, and returns the
+advanced array. The `time` argument is threaded because a multi-stage
+method evaluates the derivative at trial times `time + c*dt`, and a
+time-dependent torque (§5.7) reads that absolute time; for the
+torque-free and gravity cases it is simply unused. The integrator knows
+nothing about bodies, torques, or rendering; those are already sealed
+inside `derivative_function` by the time the integrator sees it. That
+narrowness is what lets the strategy be swapped per scenario and,
 eventually, per language (ARCHITECTURE §5.4).
 
 **The step is fixed, never adaptive.** ARCHITECTURE §6.2 advances the

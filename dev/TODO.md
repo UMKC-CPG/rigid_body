@@ -90,16 +90,21 @@ table; this list records only what remains.
       torque-free as the empty list, the gravity-through-a-pivot and
       viscous-damping models, internal dissipation as a non-torque state
       modifier, and the fixed-order composition rule.
-- [ ] §7 Integrators (DESIGN §6). **Next section.**
-- [ ] §8–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+- [x] §7 Integrators (DESIGN §6) — the selectable-strategy interface
+      with the state arithmetic, fixed-step RK4, the post-step quaternion
+      renormalization, the two error regimes, and the structure-preserving
+      (symplectic) path designed for the long regime.
+- [ ] §8 Conservation monitor (DESIGN §7). **Next section.**
+- [ ] §9–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
       order, ending with §12 (the exact TOML key layout, per §11.7) and
       §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
 
-One refinement surfaced while drafting §1, worth a later `/refine`
-decision: §1 threads `time` through `integrator.advance(...)`, whereas
-DESIGN §6.1 wrote `advance(state, dt, derivative)` without it. Time is
-needed for time-dependent torques (DESIGN §5.7). Either update DESIGN
-§6.1's signature or note the refinement there.
+**Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
+`advance(state, time, dt, derivative_function)`, with a clause explaining
+that a multi-stage method samples the derivative at `time + c*dt` and a
+time-dependent torque (DESIGN §5.7) reads that absolute time. PSEUDOCODE
+§1.1 and §7.1 now describe their signature as *matching* DESIGN rather
+than refining it. The three levels agree; nothing further pending.
 
 ---
 
