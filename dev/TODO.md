@@ -182,10 +182,15 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
 - [x] `dynamics/torque_models.py` (PSEUDOCODE §6) — GravityTorque,
       ViscousDamping, and the fixed-order total. 5 unit tests, with
       tau = r x F checked by hand. 56 unit tests total.
-- [ ] Next: `dynamics/equations_of_motion.py` (PSEUDOCODE §5) — the scalar
-      Euler equations and the pure state_derivative, validated against the
-      torque-free derivative and growth rate of
-      `dev/spikes/free_top_elliptic.py`; then `integrators` and the engine.
+- [x] `dynamics/equations_of_motion.py` (PSEUDOCODE §5) — the scalar Euler
+      equations, the pure state_derivative, the instability growth rate,
+      and energy_rate. 12 unit tests: exact match to the spike's
+      euler_derivative, derivative-level conservation of energy and |L|,
+      and the growth-rate formula. 68 unit tests total.
+- [ ] Next: `dynamics/integrators.py` (PSEUDOCODE §7) — fixed-step RK4 with
+      the field-wise state arithmetic and post-step renormalization, then
+      the engine. The payoff oracle: integrate state_derivative and compare
+      to the analytic elliptic solution of `free_top_elliptic.py`.
 
 ---
 
