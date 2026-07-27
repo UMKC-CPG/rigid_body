@@ -76,7 +76,7 @@ is an implementation detail of the code level, not of this one.
 | Section | Topic | DESIGN source | Status |
 | --- | --- | --- | --- |
 | 1 | The simulation loop | §4.2, §6, §7, §12, §14 | written |
-| 2 | Orientation mathematics | §1.3, §2.2, §2.4, §2.6 | not yet written |
+| 2 | Orientation mathematics | §1.3, §2.2, §2.4, §2.6 | written |
 | 3 | State and derived quantities | §2.1, §2.5 | not yet written |
 | 4 | Inertia and body construction | §3 | not yet written |
 | 5 | Equations of motion | §4 | not yet written |
@@ -241,3 +241,213 @@ guarantee of ARCHITECTURE §6.4, and each is visible in the pseudocode:
 The determinism test of ARCHITECTURE §8.6 checks precisely this: run the
 same scenario twice, and under different control sequences, and require
 identical trajectories.
+
+---
+
+## 2. Orientation Mathematics
+
+Orientation mathematics is the layer every other algorithm stands on: the
+simulation loop (§1), the equations of motion (§5), the conservation
+monitor (§8), and the renderer all rotate vectors or read out angles, and
+they do it through the operations named here. DESIGN §2.2 fixed the
+quaternion conventions, §2.4 the kinematic law, §1.3 the z-x-z Euler
+sequence, and §2.6 the degeneracy the read-out must respect. This section
+transcribes those into concrete routines; it invents nothing the design
+did not already argue for.
+
+### 2.1 Quaternion algebra
+
+All orientation work reduces to a handful of quaternion operations. They
+are stated once here, as pure functions, and used by name everywhere else.
+Quaternions are **scalar-first** throughout (DESIGN §2.2): the four
+components are `(q_w, q_x, q_y, q_z)`, the real part `q_w` first. Mixing
+this with the scalar-last order common in other libraries yields a
+well-formed quaternion for the wrong rotation, so any quaternion crossing a
+library boundary is converted explicitly.
+
+```
+function quat_multiply(a, b):
+    # Hamilton product, scalar-first. Not commutative: the order
+    # encodes the order of the composed rotations (DESIGN 2.2, 2.4).
+    (a_w, a_x, a_y, a_z) <- a
+    (b_w, b_x, b_y, b_z) <- b
+    return (a_w*b_w - a_x*b_x - a_y*b_y - a_z*b_z,   # w
+            a_w*b_x + a_x*b_w + a_y*b_z - a_z*b_y,   # x
+            a_w*b_y - a_x*b_z + a_y*b_w + a_z*b_x,   # y
+            a_w*b_z + a_x*b_y - a_y*b_x + a_z*b_w)   # z
+
+function quat_conjugate(q):
+    (q_w, q_x, q_y, q_z) <- q
+    return (q_w, -q_x, -q_y, -q_z)      # negate the vector part
+
+function pure_quat(v):
+    (v_1, v_2, v_3) <- v
+    return (0, v_1, v_2, v_3)           # a 3-vector as a quaternion
+
+function scale_quaternion(factor, q):
+    (q_w, q_x, q_y, q_z) <- q
+    return (factor*q_w, factor*q_x, factor*q_y, factor*q_z)
+
+function quat_normalize(q):
+    # Restore the unit-norm constraint that only unit quaternions
+    # represent rotations (DESIGN 2.2).
+    (q_w, q_x, q_y, q_z) <- q
+    magnitude <- sqrt(q_w^2 + q_x^2 + q_y^2 + q_z^2)
+    return scale_quaternion(1 / magnitude, q)
+```
+
+Normalization deliberately leaves the **sign** alone. Because `q` and `-q`
+name the same physical rotation (the double cover, DESIGN §2.2), forcing a
+"canonical" sign would be a silent rewrite of the state; nothing here does
+that, so the trajectory comparison of the determinism test (ARCHITECTURE
+§8.6) is never tricked by a spurious flip.
+
+### 2.2 Rotating a vector, and the orientation matrix
+
+A quaternion carries a vector from body components to space components by
+the **sandwich product** of DESIGN §2.2. Two shapes of the same rotation
+are provided because different consumers want different shapes: the
+derivative and the monitor rotate one vector at a time (for instance
+`angular_momentum_space` of DESIGN §2.5), while the renderer wants the
+whole `body_to_space_matrix` (DESIGN §1.4) at once.
+
+```
+function rotate_body_to_space(quaternion, vector_body):
+    # v_space = q * (0, v_body) * q_conjugate   (DESIGN 2.2).
+    sandwich <- quat_multiply(
+                    quat_multiply(quaternion, pure_quat(vector_body)),
+                    quat_conjugate(quaternion))
+    (result_w, result_x, result_y, result_z) <- sandwich
+    return (result_x, result_y, result_z)   # vector part; w is 0
+
+function quaternion_to_matrix(quaternion):
+    # The body_to_space_matrix equivalent to the sandwich above, valid
+    # for a UNIT quaternion (call quat_normalize first if in doubt).
+    # Rows and columns are numbered from 0.
+    (w, x, y, z) <- quaternion
+    return [
+        [1 - 2*(y^2 + z^2), 2*(x*y - w*z),     2*(x*z + w*y)    ],
+        [2*(x*y + w*z),     1 - 2*(x^2 + z^2), 2*(y*z - w*x)    ],
+        [2*(x*z - w*y),     2*(y*z + w*x),     1 - 2*(x^2 + y^2)]]
+```
+
+### 2.3 The orientation derivative (kinematics)
+
+The orientation half of the state derivative is the kinematic law of
+DESIGN §2.4. This routine returns only `q_dot`; the angular-velocity half,
+`omega_dot`, comes from Euler's equations in §5, and the two together form
+the derivative the integrator steps (§1.1).
+
+```
+function orientation_derivative(quaternion, angular_velocity_body):
+    # DESIGN 2.4:  q_dot = 0.5 * q * (0, omega_body)
+    # omega is in BODY components, so its pure quaternion multiplies q
+    # from the RIGHT. The space-frame form would multiply from the left;
+    # pairing one frame's omega with the other form is the silent-inverse
+    # error DESIGN 1.2 warns of.
+    omega_quaternion <- pure_quat(angular_velocity_body)
+    product          <- quat_multiply(quaternion, omega_quaternion)
+    return scale_quaternion(0.5, product)
+```
+
+Note what this does **not** do: it never renormalizes. The step drifts the
+quaternion off the unit sphere by a tiny amount, and the integrator
+restores the constraint once, after the whole step (DESIGN §6.3) — not
+here, inside a derivative that may be evaluated at several trial points.
+
+### 2.4 Building a quaternion from authoring input
+
+A scenario authors the initial orientation the way a student thinks about
+it — as three Euler angles, or as a rotation about an axis (DESIGN §1.3,
+§11) — and the loader turns that into the quaternion the state actually
+carries. Both builders compose the elementary rotations below.
+
+```
+function rotation_quaternion_z(angle):
+    half <- angle / 2
+    return (cos(half), 0, 0, sin(half))    # rotation about z
+
+function rotation_quaternion_x(angle):
+    half <- angle / 2
+    return (cos(half), sin(half), 0, 0)    # rotation about x
+
+function quaternion_from_euler(precession_angle, nutation_angle,
+                               spin_angle):
+    # z-x-z sequence of DESIGN 1.3:
+    #   R = R_z(phi) R_x(theta) R_z(psi)
+    # The quaternion product mirrors the matrix product, same order.
+    q_precession <- rotation_quaternion_z(precession_angle)
+    q_nutation   <- rotation_quaternion_x(nutation_angle)
+    q_spin       <- rotation_quaternion_z(spin_angle)
+    return quat_multiply(q_precession,
+                         quat_multiply(q_nutation, q_spin))
+
+function quaternion_from_axis_angle(axis, angle):
+    # A rotation of `angle` about a possibly unnormalized axis. The
+    # 1/length folds into the vector-part scale so the result is unit.
+    (axis_x, axis_y, axis_z) <- axis
+    half  <- angle / 2
+    scale <- sin(half) / norm(axis)
+    return (cos(half), axis_x*scale, axis_y*scale, axis_z*scale)
+```
+
+### 2.5 Euler angles as an output
+
+The three Euler angles are what the course text uses and what a student
+expects to read, so they are recovered from the quaternion whenever the
+display needs them (DESIGN §2.6). They are **output only** — computed from
+the state, never fed back into it, so they cannot drift out of agreement
+with the orientation they describe.
+
+The recovery inherits the singularity of DESIGN §1.3. When `sin(theta)`
+nears zero the precession and spin are individually undetermined and only
+a combination of them survives; the read-out must report that combination
+and mark the two angles degenerate, rather than print two racing numbers
+as if they were measurements (VISION Principle 2, at the interface).
+
+```
+function euler_angles_from_quaternion(quaternion):
+    R <- quaternion_to_matrix(quaternion)   # rows/cols numbered from 0
+
+    # theta from the (2,2) entry (= cos theta); always well defined,
+    # and clamped before arccos against roundoff past +/-1.
+    nutation_angle <- arccos(clamp(R[2][2], -1, +1))
+    sin_theta      <- sqrt(max(0, 1 - R[2][2]^2))
+
+    if sin_theta > DEGENERACY_TOLERANCE:
+        # Generic case: all three angles are separately determined.
+        precession_angle <- atan2(R[0][2], -R[1][2])
+        spin_angle       <- atan2(R[2][0],  R[2][1])
+        return { precession = precession_angle,
+                 nutation   = nutation_angle,
+                 spin       = spin_angle,
+                 degenerate = false }
+    else:
+        # Gimbal lock (DESIGN 1.3, 2.6): phi and psi collapse into one
+        # combination. Report it; flag the pair degenerate.
+        combination <- atan2(R[1][0], R[0][0])
+        # theta ~ 0  -> combination = phi + psi
+        # theta ~ pi -> combination = phi - psi  (sign of cos theta)
+        return { precession = combination,   # phi (+/-) psi
+                 nutation   = nutation_angle,
+                 spin       = none,
+                 degenerate = true }
+```
+
+Every index above follows from writing out `R = R_z(phi) R_x(theta)
+R_z(psi)` by hand (numbering rows and columns from 0):
+
+```
+R[2][2] = cos(theta)
+R[0][2] =  sin(phi) sin(theta)     R[1][2] = -cos(phi) sin(theta)
+R[2][0] =  sin(theta) sin(psi)     R[2][1] =  sin(theta) cos(psi)
+R[0][0], R[1][0]  ->  cos, sin of (phi+psi) at theta = 0
+                      cos, sin of (phi-psi) at theta = pi
+```
+
+Dividing each paired entry cancels the shared `sin(theta)` and leaves the
+`atan2` forms above. When `sin(theta)` vanishes those pairs collapse to
+zero and carry no information; only `R[1][0]` and `R[0][0]` still vary, and
+they encode a single combination — which is exactly the coordinate
+singularity DESIGN §1.3 forbids the integrator to touch, surfacing here as
+an honest label instead of numerical noise.
