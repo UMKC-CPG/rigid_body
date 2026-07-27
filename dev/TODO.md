@@ -48,8 +48,10 @@ controls) and the refine edits are drafted and awaiting commit.
 - [ ] Commit §13 (done: `ba2d9fd`) — then commit §14 and the refine edits.
       **This is the next step.**
 - [ ] Tag `v0.3-design` (ARCHITECTURE §10) once the refine edits are
-      committed and the chain is consistent.
-- [ ] Begin `PSEUDOCODE.md`, the fourth level of the chain.
+      committed and the chain is consistent. (Refine edits committed at
+      `018bd0d`; tag command prepared, awaiting the programmer to run it.)
+- [x] Begin `PSEUDOCODE.md` — scaffold (notation, Contents table) and §1
+      (the simulation loop) drafted.
 
 **Open items carried forward:**
 
@@ -65,6 +67,23 @@ controls) and the refine edits are drafted and awaiting commit.
 ## PSEUDOCODE
 
 <!-- Tasks related to algorithm specifications. -->
+
+`PSEUDOCODE.md` is being drafted section by section, mirroring the
+algorithmic subset of DESIGN. Status is tracked in its own Contents
+table; this list records only what remains.
+
+- [x] §1 The simulation loop (DESIGN §4.2, §6, §7, §12, §14; ARCH §6).
+- [ ] §2 Orientation mathematics (DESIGN §1.3, §2.2, §2.4, §2.6). **Next
+      section** — the foundation §1 and everything else call into.
+- [ ] §3–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+      order, ending with §12 (the exact TOML key layout, per §11.7) and
+      §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
+
+One refinement surfaced while drafting §1, worth a later `/refine`
+decision: §1 threads `time` through `integrator.advance(...)`, whereas
+DESIGN §6.1 wrote `advance(state, dt, derivative)` without it. Time is
+needed for time-dependent torques (DESIGN §5.7). Either update DESIGN
+§6.1's signature or note the refinement there.
 
 ---
 
