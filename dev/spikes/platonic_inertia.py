@@ -157,7 +157,7 @@ def main():
         'octahedron': ('1/10', 1.0 / 10.0),
         'dodecahedron': ('(95+39*sqrt5)/300',
                          (95.0 + 39.0 * sqrt5) / 300.0),
-        'icosahedron': ('(3+sqrt5)/10', (3.0 + sqrt5) / 10.0),
+        'icosahedron': ('(3+sqrt5)/20', (3.0 + sqrt5) / 20.0),
     }
 
     print(f"{'solid':<14} {'exact':>10} {'monte carlo':>13} "

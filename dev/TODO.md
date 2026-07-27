@@ -155,7 +155,27 @@ pins). Three PSEUDOCODE-internal gaps were fixed:
 
 ## CODE
 
-<!-- Tasks related to implementation. -->
+Implementation of `src/rigid_body/`, transcribed from PSEUDOCODE
+bottom-up so each module tests against a real oracle as it lands. Run the
+suite in the project's `rigid` venv: `pytest tests/ -v`.
+
+- [x] `core/orientation.py` (PSEUDOCODE §2) — quaternion algebra, the
+      sandwich rotation and body-to-space matrix, the kinematic q_dot, the
+      Euler and axis-angle builders, and the Euler read-out. 17 unit tests.
+      The read-out measures `sin(theta)` as `hypot(R[0][2], R[1][2])` to
+      stay robust at the gimbal-lock poles (a `sqrt(1 - cos^2)` form
+      misflagged `theta = pi`).
+- [x] `body/shapes.py` + `body/analytic_inertia.py` (PSEUDOCODE §4.3,
+      DESIGN §3.2) — the shape primitives and the closed-form inertia
+      provider. 24 unit tests; the Platonic moments are checked against the
+      exact tetrahedron decomposition in `dev/spikes/platonic_inertia.py`.
+      That check confirmed the icosahedron is `(3 + sqrt5) / 20`, and a
+      stale factor-of-two candidate in the spike's own display table was
+      corrected to match.
+- [ ] Next: `dynamics/equations_of_motion.py` (PSEUDOCODE §5, Euler's
+      equations), then `torque_models`, `integrators`, and the engine —
+      validated against `dev/spikes/free_top_elliptic.py` once the
+      integrator lands.
 
 ---
 
