@@ -27,8 +27,8 @@ Contents table marks every one "written". A `/refine` pass reconciled it
 with ARCHITECTURE (see below). This list now records only the milestone
 work that follows.
 
-**All DESIGN sections are written**, §1–§13 committed. §14 (interaction and
-controls) and the refine edits are drafted and awaiting commit.
+**All DESIGN sections are written and committed**, §1–§14, including the
+§6.1 integrator-signature reconciliation that the PSEUDOCODE pass produced.
 
 **`/refine` outcomes (this pass):**
 
@@ -43,25 +43,22 @@ controls) and the refine edits are drafted and awaiting commit.
       DESIGN §14 (interaction and controls), per the chain division: ARCH
       names the tool, DESIGN gives the prose, PSEUDOCODE the algorithm.
 
-**Next milestone — close out DESIGN and open PSEUDOCODE:**
+**Milestone — DESIGN closed, PSEUDOCODE opened and completed:**
 
-- [ ] Commit §13 (done: `ba2d9fd`) — then commit §14 and the refine edits.
-      **This is the next step.**
-- [ ] Tag `v0.3-design` (ARCHITECTURE §10) once the refine edits are
-      committed and the chain is consistent. (Refine edits committed at
-      `018bd0d`; tag command prepared, awaiting the programmer to run it.)
-- [x] Begin `PSEUDOCODE.md` — scaffold (notation, Contents table) and §1
-      (the simulation loop) drafted.
+- [x] Commit §14 and the refine edits.
+- [x] Tag `v0.3-design` (ARCHITECTURE §10) — created; the design baseline
+      is marked.
+- [x] `PSEUDOCODE.md` drafted in full — see the PSEUDOCODE section below.
 
 **Open items carried forward:**
 
 - The §8.4 elliptic solution is numerically verified
-  (`dev/spikes/free_top_elliptic.py`, passing). PSEUDOCODE and code for
-  `analytic_solutions.py` must reproduce the forms that spike certifies.
+  (`dev/spikes/free_top_elliptic.py`, passing). PSEUDOCODE §9 reproduces
+  the forms it certifies; the code for `analytic_solutions.py` must do the
+  same when written.
 - DESIGN forward-obligation still open for the code level:
   `numerical_inertia.py` must reproduce §3.2 to a stated tolerance (§3.7).
-  (The other one — the exact TOML key layout §11.7 deferred to PSEUDOCODE —
-  is now discharged in PSEUDOCODE §12.3.)
+  (The TOML key layout §11.7 deferred to PSEUDOCODE is discharged in §12.3.)
 
 ---
 
@@ -138,6 +135,21 @@ that a multi-stage method samples the derivative at `time + c*dt` and a
 time-dependent torque (DESIGN §5.7) reads that absolute time. PSEUDOCODE
 §1.1 and §7.1 now describe their signature as *matching* DESIGN rather
 than refining it. The three levels agree; nothing further pending.
+
+**`/refine` pass over the completed chain.** `src/` has no rigid-body code
+yet (PSEUDOCODE → Code not yet applicable); VISION → ARCHITECTURE and
+ARCHITECTURE → DESIGN consistent (the §6.1 edit touches nothing ARCHITECTURE
+pins). Three PSEUDOCODE-internal gaps were fixed:
+
+- [x] Finding 1 — §7.1 `select_integrator` now dispatches on the three
+      integrator names of §12.3 (`rk4`, `implicit_midpoint`, `splitting`)
+      rather than a binary SYMPLECTIC check.
+- [x] Finding 3 — §12.3's presentation zone gained an `ellipsoid_scale`
+      key and a `scale_factors` table that §14.5/§15.6 read; §14.5 now
+      compares the stored string value.
+- [x] Finding 2 — the scenario-editing restart is wired through a new
+      `run_interactive_session` driver (§1.2) that the frame loop returns
+      to, keeping the rebuild/setup out of the loop; §15.4 aligned.
 
 ---
 

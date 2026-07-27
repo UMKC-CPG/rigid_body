@@ -160,6 +160,12 @@ function run_interactive(scenario):
     loop forever:
         controls <- read_controls()                    # section 15
 
+        # An edit is a NEW run, not a change to the motion in flight
+        # (§15.4): stop this run and hand the edit to the session driver
+        # below, which rebuilds and starts the next run.
+        if controls.pending_edit is not none:
+            return controls.pending_edit
+
         if controls.mode = REPLAY:
             # Replay reads stored history; it never steps the engine
             # (DESIGN 12.4, 14.4). A read cannot perturb a state.
@@ -179,6 +185,8 @@ function run_interactive(scenario):
         scene <- build_scene(state, body, monitor)      # section 14
         render(scene)                                   # render/ only
         pump_events()                                   # windowing
+        if window_closed():
+            return none                                 # session ends
 ```
 
 Everything after the physics — `monitor.update`, `history.append`,
@@ -187,6 +195,28 @@ loop-level form of the read-only discipline the monitor (DESIGN §7.5) and
 retention (DESIGN §12.2) require, and it is what keeps the determinism
 guarantee true: turning the display, the monitor, or replay on or off
 changes nothing the next `advance_one_substep` computes.
+
+A scenario edit is deliberately *not* applied inside that loop. Editing the
+body, the initial conditions, or a torque builds a whole new scenario and
+starts a fresh run (§15.4) — which means re-running the setup above, since a
+new body, initial state, and buffers must all take effect. So the loop only
+*notices* the edit, because it is the one place that reads the controls each
+frame, and returns it; a thin session driver owns the rebuild and restart:
+
+```
+function run_interactive_session(scenario):
+    # The interactive entry point. Run one scenario until an edit is
+    # requested, then rebuild and run the next. run_interactive does the
+    # per-frame work and returns the pending edit, or none when the window
+    # closes -- so the restart, and the setup it re-runs, stays out of the
+    # frame loop (build_body, new_monitor, new_trajectory are all created
+    # afresh for the new scenario).
+    loop forever:
+        edit <- run_interactive(scenario)
+        if edit is none:
+            return                         # window closed; session ends
+        scenario <- apply_scenario_edit(scenario, edit)   # §15.4
+```
 
 ### 1.3 The batch loop
 
@@ -1118,12 +1148,15 @@ integrator takes one step of the size the scenario chose.
 
 ```
 function select_integrator(scenario):
-    # DESIGN 6.1: the integrator is chosen by the scenario. RK4 is the
-    # interactive default (7.2); a symplectic scheme (7.5) is offered for
-    # long conservative runs and is built when Future Direction 4 nears.
-    if scenario.fidelity.integrator = SYMPLECTIC:
-        return symplectic_integrator      # 7.5
-    return rk4_integrator                 # 7.2, the default
+    # DESIGN 6.1: the integrator is chosen by the scenario, by name. RK4
+    # is the interactive default (7.2); implicit_midpoint and splitting
+    # are the two symplectic schemes of 7.5, built when Future Direction 4
+    # nears. The names are the scenario key of §12.3.
+    if scenario.fidelity.integrator = "implicit_midpoint":
+        return implicit_midpoint_integrator      # 7.5
+    if scenario.fidelity.integrator = "splitting":
+        return splitting_integrator              # 7.5
+    return rk4_integrator                        # 7.2, the default
 ```
 
 ### 7.2 The baseline: fixed-step RK4
@@ -2108,11 +2141,19 @@ limit_samples = 100000
 frame = "space"                # space | body
 layout = "side_by_side"        # side_by_side | switching (DESIGN 10.6)
 palette = "default"
+ellipsoid_scale = "inertia"    # inertia | energy (§14.5, DESIGN 13.5)
 
 [presentation.camera]          # the eye, independent of the frame (11.6)
 position = [3.0, 2.0, 1.5]
 target = [0.0, 0.0, 0.0]
 up = [0.0, 0.0, 1.0]
+
+[presentation.scale_factors]   # exaggerations, each LABELED on screen
+                               # (§14.5, §15.6, VISION Principle 12).
+                               # 1.0 = physical; larger exaggerates.
+torque = 1.0
+figure_axis_tilt = 1.0         # e.g. the Chandler wobble (Goal 12)
+timescale = 1.0                # larger compresses a slow motion
 ```
 
 ### 12.4 Units, precision, and versioning
@@ -2540,7 +2581,7 @@ function ellipsoid_scale_label():
     # so two runs of one body show the same ellipsoid rolling differently.
     # Whichever scaling is shown is STATED on screen, because it is a scale
     # chosen away from a single physical value (VISION Principle 12).
-    if presentation.ellipsoid_scale = ENERGY:
+    if presentation.ellipsoid_scale = "energy":
         return "ellipsoid scaled to energy (omega . I . omega = 2T)"
     return "ellipsoid scaled to inertia (unit form)"
 ```
@@ -2681,9 +2722,9 @@ reproducibility are one mechanism seen from two ends.
 ```
 function apply_scenario_edit(scenario, edit):
     # Never mutates the running motion (§15.1): builds a NEW scenario the
-    # engine runs from its initial condition (DESIGN 14.1). The loop then
-    # re-enters run_interactive (§1.2) with this scenario, rebinding its
-    # state, body, and torques from it -- a new setting is a new run.
+    # engine runs from its initial condition (DESIGN 14.1). The frame loop
+    # returns the pending edit and the session driver (§1.2) rebuilds from
+    # this scenario -- new body, new state, new buffers; a new run.
     return with_field_replaced(scenario, edit)   # a fresh scenario record
 ```
 
