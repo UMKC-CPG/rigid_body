@@ -69,9 +69,10 @@ controls) and the refine edits are drafted and awaiting commit.
 
 <!-- Tasks related to algorithm specifications. -->
 
-`PSEUDOCODE.md` is being drafted section by section, mirroring the
-algorithmic subset of DESIGN. Status is tracked in its own Contents
-table; this list records only what remains.
+`PSEUDOCODE.md` is **complete**: all fifteen sections are drafted, and its
+Contents table marks every one "written". It transcribes the algorithmic
+subset of DESIGN into language-agnostic form. The record below is kept for
+reference; the next milestone is the source in `src/`.
 
 - [x] §1 The simulation loop (DESIGN §4.2, §6, §7, §12, §14; ARCH §6).
 - [x] §2 Orientation mathematics (DESIGN §1.3, §2.2, §2.4, §2.6) — the
@@ -126,8 +127,10 @@ table; this list records only what remains.
       role-to-encoding palette with the redundant-encoding rule, the frame
       coding, the labeled ellipsoid-scale choice, and the telemetry overlay
       with the batch tier's HDF5/XDMF path.
-- [ ] §15 Controls and time (DESIGN §14). **Next section — the last one,
-      which completes PSEUDOCODE.md.**
+- [x] §15 Controls and time (DESIGN §14) — the scenario-editing vs time
+      control split, read_controls and the substep-count map (the §1.2
+      hooks), editing as a new scenario, the read-only replay scrubber,
+      and the labeled scaling controls. **Completes PSEUDOCODE.md.**
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining

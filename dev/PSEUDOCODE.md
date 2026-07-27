@@ -89,7 +89,7 @@ is an implementation detail of the code level, not of this one.
 | 12 | Scenario load and save | §11 | written |
 | 13 | Trajectory retention | §12 | written |
 | 14 | Scene description | §13 | written |
-| 15 | Controls and time | §14 | not yet written |
+| 15 | Controls and time | §14 | written |
 
 ---
 
@@ -2583,3 +2583,150 @@ afterward. This is the §10 split paying off one last time — because the
 geometry was computed in physical coordinates with no drawing mixed in, the
 interactive tier wraps it in a scene description and the batch tier
 serializes it untouched, from the one set of numbers the physics produced.
+
+---
+
+## 15. Controls and Time
+
+This is the surface a student touches, where VISION Goals 7 and 8 —
+real-time manipulation and control over time — become concrete (DESIGN
+§14). `ui/controls.py` holds the widgets; this section gives their bindings
+language-agnostically. One idea governs it: a control may change what the
+engine is *asked* to run, or what is *shown* of a run, but it never reaches
+into a trajectory in flight.
+
+### 15.1 Two kinds of control
+
+The controls fall into two groups, the physics/presentation split of §12.2
+seen from the user's side (DESIGN §14.1):
+
+- **Scenario-editing controls** set the body, initial conditions, torque
+  models, and fidelity — the physics zone. Editing one does not mutate the
+  running motion; a change of body constructs a new body (§4), and more
+  generally a new scenario the engine runs from its initial condition
+  (§15.4). The running trajectory is immutable; a new setting is a new run.
+- **Time controls** — pause, single-step, slow motion, fast forward, and
+  replay — change only the pace and direction of *display*, mapped entirely
+  onto the substep-count model (§15.3). None alters `dt`, because changing
+  `dt` would change the trajectory, so a student slowing a Dzhanibekov flip
+  watches the identical flip, not a differently integrated one.
+
+### 15.2 Read-only to the physics
+
+The interaction layer never writes into the seven-number state. Like the
+monitor (§8.3) and retention (§13.2) it sits outside the computing core;
+its only channel to the physics is to hand the engine a new scenario
+(§15.4). That indirection preserves determinism (ARCHITECTURE §6.4): the
+trajectory depends on the scenario alone, never on which widgets were
+touched or when. The import rule makes the separation structural — `ui/`
+sits atop the dependency graph and imports downward, and nothing in the
+physics core imports `ui/` (ARCHITECTURE §4).
+
+### 15.3 Reading the controls, and the substep map
+
+Each frame the loop samples the widget state into a plain record, then asks
+how many substeps to advance. These are the two hooks §1.2 calls.
+
+```
+enum ControlMode:  LIVE, REPLAY
+enum Pace:         PAUSED, SINGLE_STEP, SLOW, NORMAL, FAST
+
+record Controls:
+    mode              # LIVE or REPLAY (§15.5)
+    pace              # the time control in force
+    replay_cursor     # position in the retained window, REPLAY only
+    pending_edit      # a scenario edit to apply, or none (§15.4)
+    scale_settings    # labeled exaggeration factors (§15.6)
+    nominal_substeps  # scenario.fidelity.substeps_per_frame, carried so
+                      # substeps_this_frame is a pure function of controls
+
+function read_controls():
+    # ui/ reads downward only (§15.2). A plain-data snapshot, no channel
+    # back into the state.
+    return { mode             = current_mode(),
+             pace             = current_pace(),
+             replay_cursor    = current_replay_cursor(),
+             pending_edit     = current_pending_edit(),
+             scale_settings   = current_scale_settings(),
+             nominal_substeps = scenario.fidelity.substeps_per_frame }
+
+function substeps_this_frame(controls):
+    # Map the time control onto a SUBSTEP COUNT, never onto dt (§15.1,
+    # ARCHITECTURE 6.3). dt is fixed; only how many fixed steps advance
+    # per rendered frame varies, so the trajectory is untouched.
+    nominal <- controls.nominal_substeps
+    if controls.pace = PAUSED:
+        return 0                            # frozen; display still redraws
+    if controls.pace = SINGLE_STEP:
+        return 1                            # one step, then ui re-pauses
+    if controls.pace = SLOW:
+        return max(1, nominal / SLOW_FACTOR)
+    if controls.pace = FAST:
+        return nominal * FAST_FACTOR
+    return nominal                          # NORMAL
+```
+
+Pacing by count and not by clock is exactly the property §1.4 leaned on for
+determinism: a slower machine takes the same steps, just fewer per second.
+
+### 15.4 Editing is a new scenario, not a mutated run
+
+Goal 7 asks that manipulating the body or its conditions respond
+immediately — meaning at the next rendered frame, not at a guaranteed
+wall-clock rate (§14.6, ARCHITECTURE §6.2). Every edit resolves into a
+scenario (§12), so any state a student reaches by fiddling is captured
+exactly and can be replayed or handed to the batch tier: exploration and
+reproducibility are one mechanism seen from two ends.
+
+```
+function apply_scenario_edit(scenario, edit):
+    # Never mutates the running motion (§15.1): builds a NEW scenario the
+    # engine runs from its initial condition (DESIGN 14.1). The loop then
+    # re-enters run_interactive (§1.2) with this scenario, rebinding its
+    # state, body, and torques from it -- a new setting is a new run.
+    return with_field_replaced(scenario, edit)   # a fresh scenario record
+```
+
+### 15.5 The replay scrubber
+
+The replay control **reads** history rather than stepping. It scans the
+`dynamics/trajectory.py` buffer through the time controls (§13), drawing
+stored states for the recent past and, beyond the retained window,
+re-integrating from a keyframe (§13.5). Scrubbing is a read over the
+buffer, never a rewind of the engine, and it cannot perturb a single
+computed state — the §13.2 read-only property at the control level. (It is
+also why replay is *re-reading stored states*, not running the engine
+backward, which no dissipative scenario, §6.4, could do anyway.)
+
+```
+function replay_state_at(history, keyframes, replay_cursor):
+    # The in-window lookup is the history.read the loop calls (§1.2); this
+    # generalizes it to the deep past. Either way, a pure read (§15.2).
+    if within_retained_window(history, replay_cursor):
+        return trajectory_read(history, replay_cursor)      # 13.4
+    return keyframe_read(keyframes,                          # 13.5
+                         time_of_cursor(replay_cursor))
+```
+
+### 15.6 Controls that scale, and honest labels
+
+A few controls do not select physics but scale it for visibility —
+exaggerating a weak torque, compressing a slow timescale, or choosing the
+ellipsoid's drawing size (§14.5). These are legitimate, and VISION
+Principle 12 governs them: whenever a control moves a quantity off its
+physical value, the factor is stated on screen, carried as the
+`scale_settings` the scene turns into first-class labels (§14.5). A slider
+that silently exaggerated would mislead exactly as an undisclosed numerical
+drift does (§8) — so the scaling controls here and the labels of §14.5 are
+two views of one requirement, the last place in the tool where Principle 2's
+discipline, that nothing false is shown as physics, reaches the student's
+hand.
+
+---
+
+With §15 the chain is complete from top to bottom: VISION fixed the goals,
+ARCHITECTURE the modules, DESIGN the algorithms and their reasons, and this
+document the language-agnostic form of every algorithm among them. What
+remains is the last transcription — from this pseudocode into the source of
+`src/` — where each routine here becomes code that reads, as VISION
+Principle 7 asks, the way this document does.
