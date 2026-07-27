@@ -83,7 +83,7 @@ is an implementation detail of the code level, not of this one.
 | 6 | Torque models | §5 | written |
 | 7 | Integrators | §6 | written |
 | 8 | Conservation monitor | §7 | written |
-| 9 | Analytic solutions | §8 | not yet written |
+| 9 | Analytic solutions | §8 | written |
 | 10 | Poinsot geometry | §9 | not yet written |
 | 11 | Reference frames | §10 | not yet written |
 | 12 | Scenario load and save | §11 | not yet written |
@@ -1446,3 +1446,234 @@ function poinsot_identity_residual(state, body):
     return twice_energy - dot(state.angular_velocity_body,
                               angular_momentum_body(state, body))
 ```
+
+---
+
+## 9. Analytic Solutions
+
+A handful of rigid-body motions have closed forms, and VISION Principle 3
+makes them the yardstick the integrator is judged against while VISION Goal
+9 draws them on screen beside the numerical motion. This section writes
+those solutions down concretely (DESIGN §8), because a formula merely
+gestured at can become neither an overlay nor a test. Several were quoted
+where first needed — the instability rate in §5.4, the heavy-top precession
+in §6.3 — and are completed here in the exact forms the code will use.
+
+The asymmetric-top forms of §9.4 are **certified**: the spike
+`dev/spikes/free_top_elliptic.py` evaluates both branches against a
+high-accuracy integration of the same initial condition and finds
+agreement at the integrator's noise floor, with the analytic solution
+holding `2T` and `|L|^2` constant on its own (DESIGN §8.4). The pseudocode
+below reproduces exactly what that spike validated.
+
+### 9.1 One module, two duties
+
+`analytic_solutions.py` serves two purposes from one set of formulas
+(DESIGN §8.1), which is why it is a runtime component and not a test-only
+helper: as an **overlay** (VISION Goal 9), drawn alongside the numerical
+motion, and as an **oracle** (VISION Principle 3), the yardstick the
+regression suite and the §7.2 convergence study measure against. So each
+solution produces its result in the same form the engine emits — a state,
+or the body-frame `omega`, as a function of time — and the renderer and the
+test harness treat analytic and numerical motion identically. The closed
+forms cover only special cases; §9.6 is where the tool says so plainly
+rather than papering over the gap.
+
+### 9.2 Steady rotation about a principal axis
+
+The simplest solution and the first oracle (DESIGN §8.2): a body set
+spinning about one principal axis stays there, `omega` constant, turning
+uniformly about the space-fixed axis along `L`. Any leak of `omega` onto
+the other two axes is pure numerical error, since the physics forbids it
+exactly.
+
+```
+function steady_principal_rotation(initial_state, time):
+    omega <- initial_state.angular_velocity_body
+    # omega lies along a principal axis, so L is parallel to it and that
+    # axis is fixed in space (§5.1). The body turns about it at |omega|.
+    axis_space <- rotate_body_to_space(
+                      initial_state.body_to_space_quaternion, omega)
+    rotation   <- quaternion_from_axis_angle(axis_space, norm(omega)*time)
+    # A space-frame rotation composes on the LEFT (§2.4).
+    return { body_to_space_quaternion =
+                 quat_multiply(rotation,
+                     initial_state.body_to_space_quaternion),
+             angular_velocity_body = omega }
+```
+
+### 9.3 The torque-free symmetric top
+
+For a symmetric top (`I_1 = I_2 != I_3`) under no torque the motion is a
+steady precession with **two distinct rates** — one in the body, one in
+space — and telling them apart is the frame lesson of VISION Goal 5 (§11).
+Both are exact and amplitude-independent, which makes them clean oracles
+(DESIGN §8.3).
+
+```
+function symmetric_top_precession_rates(state, body):
+    (I_1, I_2, I_3) <- body.principal_moments     # I_1 = I_2
+    (omega_1, omega_2, omega_3) <- state.angular_velocity_body
+
+    # Body frame: (omega_1, omega_2) circle body axis 3 at this rate;
+    # it is what ARCHITECTURE 8.2 names as an oracle.
+    body_precession_rate  <- omega_3 * (I_3 - I_1) / I_1
+
+    # Space frame: the figure axis holds a fixed angle to the constant L
+    # and precesses about it at |L|/I_1; this is what the overlay draws.
+    space_precession_rate <- norm(angular_momentum_body(state, body))
+                             / I_1
+
+    return { body_precession_rate  = body_precession_rate,
+             space_precession_rate = space_precession_rate }
+```
+
+The sign of `body_precession_rate` is physics: positive for a prolate body
+(`I_3 < I_1`, rod-like) and negative for an oblate one (`I_3 > I_1`,
+disk-like, such as the Earth of VISION Goal 12), so the two shapes precess
+opposite ways in the body frame — the Earth's oblateness is what makes its
+free precession retrograde there.
+
+### 9.4 The torque-free asymmetric top
+
+When all three moments differ the exact solution is in Jacobi elliptic
+functions (DESIGN §8.4) — the sharpest oracle for fully general free
+motion, and the nonlinear completion of the §5.4 instability. The forms
+below are anchored where the spike anchored them: moments strictly ordered
+`I_1 < I_2 < I_3`, and an initial spin with `omega_2(0) = 0` and
+non-negative outer components, the phase where `(sn, cn, dn) = (0, 1, 1)`.
+The Jacobi functions and the complete integral `K` are parameterized by the
+**squared** modulus `k^2`, matching that spike.
+
+```
+function free_asymmetric_top_parameters(principal_moments, initial_spin):
+    (I_1, I_2, I_3) <- principal_moments
+    require I_1 < I_2 < I_3                    # strictly ordered (8.4)
+    require initial_spin_2 is 0                # anchored phase
+
+    # The two invariants that fix the motion (§3.3): 2T and |L|^2.
+    (w_1, w_2, w_3) <- initial_spin
+    two_ke    <- I_1*w_1^2 + I_2*w_2^2 + I_3*w_3^2
+    l_squared <- (I_1*w_1)^2 + (I_2*w_2)^2 + (I_3*w_3)^2
+
+    if l_squared - two_ke*I_2 >= 0:
+        # Main branch: spin nearest axis 3 (largest moment).
+        # omega_1 rides cn, omega_2 rides sn, omega_3 rides dn.
+        coefficient_1 <- sqrt((two_ke*I_3 - l_squared)
+                              / (I_1 * (I_3 - I_1)))
+        coefficient_2 <- sqrt((two_ke*I_3 - l_squared)
+                              / (I_2 * (I_3 - I_2)))
+        coefficient_3 <- sqrt((l_squared - two_ke*I_1)
+                              / (I_3 * (I_3 - I_1)))
+        axis_functions <- ("cn", "sn", "dn")
+        rate <- sqrt((I_3 - I_2) * (l_squared - two_ke*I_1)
+                     / (I_1*I_2*I_3))
+        modulus_squared <- ((I_2 - I_1) * (two_ke*I_3 - l_squared))
+                           / ((I_3 - I_2) * (l_squared - two_ke*I_1))
+    else:
+        # Complementary branch: spin nearest axis 1 (smallest moment),
+        # 8.4 with axes 1 and 3 exchanged.
+        # omega_1 rides dn, omega_2 rides sn, omega_3 rides cn.
+        coefficient_1 <- sqrt((l_squared - two_ke*I_3)
+                              / (I_1 * (I_1 - I_3)))
+        coefficient_2 <- sqrt((two_ke*I_1 - l_squared)
+                              / (I_2 * (I_1 - I_2)))
+        coefficient_3 <- sqrt((two_ke*I_1 - l_squared)
+                              / (I_3 * (I_1 - I_3)))
+        axis_functions <- ("dn", "sn", "cn")
+        rate <- sqrt((I_1 - I_2) * (l_squared - two_ke*I_3)
+                     / (I_1*I_2*I_3))
+        modulus_squared <- ((I_2 - I_3) * (two_ke*I_1 - l_squared))
+                           / ((I_1 - I_2) * (l_squared - two_ke*I_3))
+
+    # Body-frame motion repeats every 4 K in scaled time, since sn and cn
+    # each have quarter-period K (8.4). Computing it here guarantees the
+    # solution and its period cannot disagree.
+    period <- 4 * complete_elliptic_integral_K(modulus_squared) / rate
+
+    return { coefficients    = (coefficient_1, coefficient_2,
+                                coefficient_3),
+             axis_functions  = axis_functions,
+             rate            = rate,
+             modulus_squared = modulus_squared,
+             period          = period }
+
+function evaluate_free_asymmetric_top(parameters, time):
+    # Evaluate omega(t) in body components. The three Jacobi functions are
+    # computed once at the scaled time; each axis then picks the one it
+    # rides (8.4).
+    scaled_time  <- parameters.rate * time
+    (sn, cn, dn) <- jacobi_elliptic(scaled_time,
+                                    parameters.modulus_squared)
+    function_table <- { "sn" = sn, "cn" = cn, "dn" = dn }
+
+    omega <- (0, 0, 0)
+    for axis in (1, 2, 3):
+        coefficient   <- parameters.coefficients[axis]
+        function_name <- parameters.axis_functions[axis]
+        omega[axis]   <- coefficient * function_table[function_name]
+    return omega
+```
+
+Two connections DESIGN §8.4 records, which were cross-checks as much as
+claims. The dividing case `|L|^2 = 2*T*I_2` is the separatrix: there
+`k = 1`, the elliptic functions degenerate to hyperbolic ones, and `K(1)`
+diverges so the period becomes infinite — the Dzhanibekov flip is a
+near-separatrix orbit, and its "hang, then flip" character is `K(k)`
+growing without bound as `k -> 1`. And the §5.4 growth rate `sigma` is that
+same separatrix's departure exponent, so the flip-time estimate there is
+the near-separatrix limit of this exact period. The linear §5.4 picture and
+this nonlinear one are two views of one orbit. A full-orientation
+trajectory for this case needs a further quadrature beyond DESIGN §8.4's
+scope; the overlay here is the body-frame `omega` curve — the polhode §10
+draws.
+
+### 9.5 Steady precession of the heavy symmetric top
+
+The heavy symmetric top has no closed form for a general start — its
+nutation is elliptic, like §9.4 — but its *steady-precession* solutions, in
+which the figure axis sweeps a cone at a fixed nutation angle, are exact and
+are what the overlay draws (DESIGN §8.5). A steady rate satisfies a
+quadratic, so the top can precess slow or fast at the same tilt.
+
+```
+function heavy_top_steady_precession(body, spin_rate_3, nutation_angle,
+                                     gravity_magnitude, pivot_distance):
+    (I_1, I_2, I_3) <- body.principal_moments        # I_1 = I_2
+    mass <- body.total_mass
+
+    # I_1 cos(theta_0) phi_dot^2 - I_3 omega_3 phi_dot + M g l = 0 (8.5).
+    quad_a <- I_1 * cos(nutation_angle)
+    quad_b <- -(I_3 * spin_rate_3)
+    quad_c <- mass * gravity_magnitude * pivot_distance
+
+    # Steady precession exists only if the top spins fast enough:
+    # (I_3 omega_3)^2 >= 4 I_1 M g l cos(theta_0) (8.5).
+    discriminant <- quad_b^2 - 4*quad_a*quad_c
+    if discriminant < 0:
+        return { exists = false }        # too slow; the motion nutates
+
+    root <- sqrt(discriminant)
+    return { exists    = true,
+             # Slow root: the familiar M g l / (I_3 omega_3) of §6.3.
+             slow_root = (-quad_b - root) / (2*quad_a),
+             fast_root = (-quad_b + root) / (2*quad_a) }
+```
+
+The threshold is itself an oracle: a demonstration starting just above it
+and just below should look qualitatively different — the quantitative form
+of "spin it faster to make it steady."
+
+### 9.6 Where the overlay stops, and why that is honest
+
+The general asymmetric heavy top, and the general nutating symmetric top,
+have no closed-form trajectory. For those cases the tool draws **nothing**
+rather than inventing an approximation and presenting it as theory — an
+absent overlay is the honest statement that no analytic result exists there
+(DESIGN §8.6). Where an overlay *is* drawn, its divergence from the
+numerical motion is not a failure to hide but the very thing to show: in the
+classroom regime the two curves coincide and the message is
+"trustworthy"; in the weak-torque, long-time regime (§7.4) they slowly
+part, and that parting is the visible signature of secular integration
+error — the overlay is what lets a student see which curve is physics and
+which is drift (VISION Principle 2, Goal 9).
