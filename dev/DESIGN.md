@@ -1437,12 +1437,14 @@ the cleanest oracles available: a simulated symmetric top must show
 against these expressions. `Omega_body` is the rate ARCHITECTURE §8.2
 names; `phi_dot` is what the overlay draws in the space frame.
 
-The sign of `Omega_body` carries physics worth noting: it is positive for
-a prolate body (`I_3 < I_1`, a rod-like top) and negative for an oblate
-one (`I_3 > I_1`, a disk-like top such as the Earth of Goal 12), so the
+The sign of `Omega_body` carries physics worth noting: from
+`Omega_body = omega_3 (I_3 - I_1) / I_1` it is negative for a prolate body
+(`I_3 < I_1`, a rod-like top) and positive for an oblate one
+(`I_3 > I_1`, a disk-like top such as the Earth of Goal 12), so the
 body-frame precession runs the opposite way for the two shapes. The
-Earth's oblateness is what makes its free precession retrograde in the
-body frame.
+Earth's oblateness is what makes its free precession prograde in the
+body frame — the same direction as its rotation, which is why the
+Chandler wobble runs prograde.
 
 ### 8.4 The torque-free asymmetric top
 

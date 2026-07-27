@@ -1561,11 +1561,11 @@ function symmetric_top_precession_rates(state, body):
              space_precession_rate = space_precession_rate }
 ```
 
-The sign of `body_precession_rate` is physics: positive for a prolate body
-(`I_3 < I_1`, rod-like) and negative for an oblate one (`I_3 > I_1`,
+The sign of `body_precession_rate` is physics: negative for a prolate body
+(`I_3 < I_1`, rod-like) and positive for an oblate one (`I_3 > I_1`,
 disk-like, such as the Earth of VISION Goal 12), so the two shapes precess
 opposite ways in the body frame — the Earth's oblateness is what makes its
-free precession retrograde there.
+free precession prograde there (the same direction as its rotation).
 
 ### 9.4 The torque-free asymmetric top
 

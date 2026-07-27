@@ -220,9 +220,18 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       resolved-vs-recomputed consistency check, and
       run_batch_from_scenario. 6 integration tests. 108 tests total.
       **The batch tier is now fully functional from a scenario file.**
-- [ ] Next: the remaining subsystems — the conservation monitor (§8),
-      analytic solutions (§9), Poinsot and frames (§10, §11), then the
-      render/ui interactive tier (`scene_description`, `palettes`,
+- [x] `analysis/analytic_solutions.py` (PSEUDOCODE §9) — steady principal
+      rotation, the symmetric-top precession rates, the torque-free
+      asymmetric top in Jacobi elliptic functions (both branches), and the
+      heavy-top steady-precession quadratic. 11 unit tests: the asymmetric
+      forms match the certified `free_top_elliptic.py` spike exactly, and
+      steady rotation and the symmetric body rate are cross-checked by
+      integration. 119 tests total. This surfaced a backwards precession-
+      sign in the DESIGN §8.3 / PSEUDOCODE §9.3 prose (the formula was
+      right); corrected at all three levels — prolate negative, oblate and
+      the Earth positive, so the Chandler wobble is prograde.
+- [ ] Next: the conservation monitor (§8), Poinsot and frames (§10, §11),
+      then the render/ui interactive tier (`scene_description`, `palettes`,
       `vedo_renderer`, `controls`, `time_control`) and the rbsim/rbbatch
       entry scripts (XYZ idiom).
 
