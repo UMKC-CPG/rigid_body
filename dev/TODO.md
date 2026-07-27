@@ -121,8 +121,13 @@ table; this list records only what remains.
       cache over the recomputable Markovian ground truth: the bounded ring
       buffer, keyframe-plus-re-integration for long runs, the sink spill
       for whole-history preservation, and why the limit is recorded.
-- [ ] §14 Scene description (DESIGN §13). **Next section.**
-- [ ] §15 Controls and time (DESIGN §14) — the last section.
+- [x] §14 Scene description (DESIGN §13) — the quantity/primitive/pixel
+      pipeline, the named-drawable inventory assembled by build_scene, the
+      role-to-encoding palette with the redundant-encoding rule, the frame
+      coding, the labeled ellipsoid-scale choice, and the telemetry overlay
+      with the batch tier's HDF5/XDMF path.
+- [ ] §15 Controls and time (DESIGN §14). **Next section — the last one,
+      which completes PSEUDOCODE.md.**
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining

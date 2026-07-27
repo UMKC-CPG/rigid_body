@@ -88,7 +88,7 @@ is an implementation detail of the code level, not of this one.
 | 11 | Reference frames | §10 | written |
 | 12 | Scenario load and save | §11 | written |
 | 13 | Trajectory retention | §12 | written |
-| 14 | Scene description | §13 | not yet written |
+| 14 | Scene description | §13 | written |
 | 15 | Controls and time | §14 | not yet written |
 
 ---
@@ -2379,3 +2379,207 @@ Recording the limit makes even that approximate view reproducible — an
 instructor slowing through a flip in lecture and a student reloading later
 see the same thing down to the interpolation. For the exact policies of
 §13.4 and §13.6 the limit changes only memory use, never a displayed state.
+
+---
+
+## 14. Scene Description and Palettes
+
+This is the last link between physics and presentation (DESIGN §13, VISION
+Principle 9). `scene_description.py` lists *what* to draw in
+renderer-agnostic terms and `palettes.py` fixes *how* each thing is
+encoded; neither draws a pixel — that is `vedo_renderer.py` alone (§11
+notwithstanding, ARCHITECTURE §5.3). This section also discharges the
+presentation choices earlier sections deferred here: the ellipsoid's scale
+(§10.2) and the frame colors and panel layout (§11.6).
+
+### 14.1 Three stages: quantity, primitive, pixel
+
+Drawing passes through three hands, the renderer boundary (ARCHITECTURE
+§5.3) stated in the direction data flows:
+
+1. `geometry/` and `analysis/` produce **physical quantities** — the
+   ellipsoid (§10.2), the polhode and herpolhode (§10.4, §10.5), `omega`
+   and `L`, the frame axes — in physical coordinates, knowing nothing of
+   how they will look.
+2. `scene_description.py` turns those into a **renderer-agnostic list of
+   drawables**: plain data, each item carrying its geometry, physical role,
+   frame (§11), and label — but no color and no VTK.
+3. `vedo_renderer.py` realizes the list as **pixels**, the only module that
+   names vedo or VTK.
+
+The middle stage is what this section specifies. Like the scenario it is
+plain data, which is what lets one description drive a live window or a
+`video_sink` (§13.6) without either reaching into the physics — the
+structural form of Principle 9.
+
+### 14.2 A drawable, and the scene inventory
+
+Goal 9 and Principle 5 demand that nothing be drawn that does not stand for
+a **named physical quantity** a student can trace to the equations. So a
+drawable is not a shape with a color; it is a quantity with a geometry, a
+role, a frame, and a label that travels *with* it.
+
+```
+record Drawable:
+    geometry     # points/mesh/vector, in physical coordinates
+    role         # what it IS -- the palette key (§14.3)
+    frame        # BODY | SPACE | BOTH | NEITHER -- panel and anchor (§11)
+    label        # text carried with the drawable, not added by renderer
+    scale_note   # optional on-screen note for a scaled quantity (§14.5)
+```
+
+`build_scene` assembles the inventory each frame from the computed
+quantities. It is the `build_scene` the loop calls (§1.2); it is torque
+that decides whether the Poinsot objects appear, since they exist only for
+torque-free motion (§10).
+
+```
+function build_scene(state, body, monitor):
+    drawables <- empty list
+
+    # The body, or its ellipsoid proxy if it has no geometry (§4, §10.2).
+    if body.geometry is not none:
+        append(drawables, Drawable(body.geometry, "body_mesh", BODY,
+                                   "rigid body"))
+    ellipsoid <- momental_ellipsoid(body)                    # 10.2
+    append(drawables, Drawable(ellipsoid, "momental_ellipsoid", BODY,
+                               "momental ellipsoid",
+                               scale_note = ellipsoid_scale_label()))
+
+    # The Poinsot construction -- torque-free only (§10).
+    if monitor.torque_models is empty:
+        append(drawables, Drawable(polhode(body, state, SAMPLES),
+                                   "polhode", BODY, "polhode: omega in body"))
+        append(drawables, Drawable(invariable_plane(state, body),
+                                   "invariable_plane", SPACE,
+                                   "invariable plane"))
+        append(drawables, Drawable(herpolhode_geometry(state, body),
+                                   "herpolhode", SPACE,
+                                   "herpolhode: omega in space"))
+
+    # The two shared arrows, drawn in BOTH panels (§11.4); to_view (§11.2)
+    # re-expresses each in its panel's frame at draw time.
+    append(drawables, Drawable(state.angular_velocity_body,
+                               "angular_velocity", BOTH, "omega"))
+    append(drawables, Drawable(angular_momentum_space(state, body),
+                               "angular_momentum", BOTH, "L"))
+
+    # The two labeled triads (§1.1 names).
+    append(drawables, Drawable(body.principal_axes, "body_triad", BODY,
+                               "body axes 1, 2, 3"))
+    append(drawables, Drawable(LABORATORY_AXES, "lab_triad", SPACE,
+                               "space axes X, Y, Z"))
+
+    # The telemetry overlay belongs to NEITHER frame (§14.6).
+    append(drawables, telemetry_overlay(monitor, state, body))
+
+    return { drawables = drawables }
+```
+
+The rule that makes this hold is negative: a drawable with no named
+quantity behind it does not go in the scene. Decorative geometry and
+cosmetic flourishes are what Principle 5 rules out, because a student cannot
+trace them to anything.
+
+### 14.3 A palette maps role to encoding
+
+A palette maps the *role* an item plays to the *visual encoding* it is
+drawn with. The scene names only the role; the palette resolves it; the
+renderer turns the encoding into pixels — so switching light, dark, or
+color-blind-safe schemes touches neither the scene nor the physics (VISION
+Principle 6).
+
+```
+record Encoding:
+    color, line_style, line_weight, opacity, marker
+
+function resolve_encoding(palette, role):
+    return palette.encodings[role]
+```
+
+Principle 6 imposes a rule that reaches back into §14.2: **no distinction
+that carries meaning may rest on color alone** where a label or line style
+can also carry it. So every meaningful distinction is encoded
+**redundantly** — the polhode and herpolhode differ in hue *and* dash
+pattern *and* label; the body and space frames differ in hue *and* their
+axis labels (`1, 2, 3` vs `X, Y, Z`); `omega` and `L` differ in hue *and*
+arrowhead *and* label. That redundancy is what makes a color-blind-safe
+palette possible without losing information, and it is why §14.2 required
+every drawable to carry a label and a line-style role, not merely a color
+slot.
+
+### 14.4 Coding the two frames
+
+Which colors carry which frame (deferred from §11.6) follows the redundancy
+rule: each frame gets a consistent hue family — one for everything anchored
+to the body, another for everything anchored to space — applied uniformly
+across that frame's triad, its trace (polhode with the body, herpolhode
+with space), and its reading of a shared vector. A viewer learns the coding
+once and reads it everywhere, and because the frames also differ by their
+axis labels, the coding survives a color-blind palette.
+
+The panel layout §11.6 left open is a presentation setting living in the
+scenario's presentation zone (§12.2). The default gives the two frames
+equal panels — the point of the side-by-side view is an even comparison — and
+a scenario may bias the split or select the single-panel switching view
+without touching a computed state.
+
+### 14.5 The ellipsoid scale, and other labeled choices
+
+§10.2 left the momental ellipsoid's *size* open. Two scalings are
+meaningful: the **inertia ellipsoid** `I_1 x1^2 + I_2 x2^2 + I_3 x3^2 = 1`,
+body-fixed regardless of spin rate, on which the contact point is the
+scaled `rho = omega/sqrt(2T)`; and the **energy ellipsoid**
+`omega . I . omega = 2T`, the same shape resized so the tip of `omega`
+itself is the contact point.
+
+```
+function ellipsoid_scale_label():
+    # The default is the INERTIA ellipsoid, the body-fixed object §10.2
+    # built the construction on -- it does not resize as the spin changes,
+    # so two runs of one body show the same ellipsoid rolling differently.
+    # Whichever scaling is shown is STATED on screen, because it is a scale
+    # chosen away from a single physical value (VISION Principle 12).
+    if presentation.ellipsoid_scale = ENERGY:
+        return "ellipsoid scaled to energy (omega . I . omega = 2T)"
+    return "ellipsoid scaled to inertia (unit form)"
+```
+
+Principle 12 covers more than the ellipsoid. Any quantity a scene scales
+away from its physical magnitude to make it visible states the factor on
+screen — the exaggerated figure-axis tilt that makes the Chandler wobble
+(Goal 12) visible, a torque scaled up for a classroom, a compressed
+timescale — and the non-physics additions carry their own honest label,
+such as the internal-dissipation state modifier of §6.5, which is not a
+torque and must not be dressed as ordinary physics. The scene carries these
+labels as first-class text, not as chrome a palette could hide.
+
+### 14.6 The overlay, and what the batch tier draws instead
+
+The telemetry overlay is the on-screen face of the monitor (§8): the energy
+and momentum drift rates (§8.2), the simulated-to-elapsed time ratio that
+ARCHITECTURE §6.2 insists be shown rather than silently corrected, and the
+Euler angles (§2.5) with their degeneracy marked near `sin(theta) = 0`. It
+is a drawable like any other but belongs to no single frame, so it rides
+above both panels.
+
+```
+function telemetry_overlay(monitor, state, body):
+    readout <- { drift        = monitor.residual_trend.summary(),   # 8.2
+                 time_ratio   = simulated_over_elapsed_ratio(),
+                 euler_angles = euler_angles_from_quaternion(        # 2.5
+                                    state.body_to_space_quaternion) }
+    # The time ratio reads the wall clock for DISPLAY only; it never feeds
+    # the physics, whose pacing is by substep count (§1.4), so showing it
+    # does not disturb determinism.
+    return Drawable(readout, "telemetry", NEITHER, "conservation monitor")
+```
+
+A closing note returns to the boundary the document started from. The batch
+tier builds **no** scene description at all: it has no renderer, so
+`geometry/` writes the same polhode, ellipsoid, and traces straight to HDF5
+with an XDMF companion (ARCHITECTURE §3.7) and ParaView draws them
+afterward. This is the §10 split paying off one last time — because the
+geometry was computed in physical coordinates with no drawing mixed in, the
+interactive tier wraps it in a scene description and the batch tier
+serializes it untouched, from the one set of numbers the physics produced.
