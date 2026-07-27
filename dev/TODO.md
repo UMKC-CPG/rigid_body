@@ -86,8 +86,12 @@ table; this list records only what remains.
       state_derivative, the additive body-frame torque total, the
       intermediate-axis growth rate with its interface guard, and the
       conservation rate laws the monitor leans on.
-- [ ] §6 Torque models (DESIGN §5). **Next section.**
-- [ ] §7–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+- [x] §6 Torque models (DESIGN §5) — the pure torque_body interface,
+      torque-free as the empty list, the gravity-through-a-pivot and
+      viscous-damping models, internal dissipation as a non-torque state
+      modifier, and the fixed-order composition rule.
+- [ ] §7 Integrators (DESIGN §6). **Next section.**
+- [ ] §8–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
       order, ending with §12 (the exact TOML key layout, per §11.7) and
       §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
 

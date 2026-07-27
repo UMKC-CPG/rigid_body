@@ -80,7 +80,7 @@ is an implementation detail of the code level, not of this one.
 | 3 | State and derived quantities | §2.1, §2.5 | written |
 | 4 | Inertia and body construction | §3 | written |
 | 5 | Equations of motion | §4 | written |
-| 6 | Torque models | §5 | not yet written |
+| 6 | Torque models | §5 | written |
 | 7 | Integrators | §6 | not yet written |
 | 8 | Conservation monitor | §7 | not yet written |
 | 9 | Analytic solutions | §8 | not yet written |
@@ -916,3 +916,142 @@ torque acted. It integrates these rates over each interval and compares the
 result against the observed change in energy and momentum, reporting the
 discrepancy. That discrepancy, not the raw drift, is the honest measure of
 integration error under torque (§8, DESIGN §4.6, VISION Principle 2).
+
+---
+
+## 6. Torque Models
+
+A torque model supplies the `Gamma` that §5 takes as given. DESIGN §5 fixes
+their common interface and specifies the two the first version ships. The
+whole design turns on one restraint: the equations of motion name no
+particular torque, so a new model is an addition that never touches §5, and
+anything that cannot be written through this interface is a signal that it
+is not a torque at all (§6.5 is the worked example).
+
+### 6.1 The interface
+
+Every model answers one question (DESIGN §5.1): at the current instant,
+what torque acts on this body? Each presents a single operation,
+
+```
+torque_body(time, state, body) -> 3-vector in body components
+```
+
+obeying the two constraints of DESIGN §4.5 — **body** components and
+**additive** — and, like the derivative it feeds, it is **pure**. A model
+that recorded or accumulated anything would corrupt the multi-stage
+integrator, which evaluates the derivative at trial states off the
+trajectory (DESIGN §5.1). The full state is passed to every model even
+though each uses only part of it — gravity needs the orientation, damping
+the angular velocity, a driven torque the time — so that one signature
+serves them all.
+
+Each model below is written as a constructor that captures its fixed
+parameters once and returns an object exposing `torque_body`; the total
+(§5.3) iterates over a list of these.
+
+### 6.2 Torque-free motion is the empty list
+
+Torque-free motion is not a code path. It is an **empty** list of models,
+whose sum `total_torque_body` (§5.3) returns as the zero vector. There is
+no null model and no `if torque is none` branch — deliberately, because
+torque-free motion is the most-used configuration (VISION Goal 1), and a
+branch only the common case takes is one whose failure is found late
+(DESIGN §5.2).
+
+### 6.3 Uniform gravity through a pivot
+
+The heavy top (VISION Goal 3) turns about a fixed pivot while gravity acts
+at the center of mass, displaced from it. Gravity is naturally a
+space-frame vector — it points down whatever the body does — so it is
+rotated into the body frame and crossed with the **constant** body-frame
+lever arm (DESIGN §5.3). That ordering does one rotation per step, not two,
+and keeps the constant arm visibly constant.
+
+```
+function rotate_space_to_body(quaternion, vector_space):
+    # The inverse of rotate_body_to_space (2.2): because q maps body to
+    # space, its conjugate maps space to body.
+    return rotate_body_to_space(quat_conjugate(quaternion),
+                                vector_space)
+
+function make_gravity_torque(gravity_space, pivot_to_com_body):
+    # gravity_space is the acceleration vector (points down); the lever
+    # arm pivot_to_com_body is fixed in the body frame (DESIGN 3.8, 5.3).
+    function torque_body(time, state, body):
+        gravity_body <- rotate_space_to_body(
+                            state.body_to_space_quaternion,
+                            gravity_space)
+        weight_body  <- body.total_mass * gravity_body   # force = M g
+        return cross(pivot_to_com_body, weight_body)      # tau = r x F
+    return model exposing torque_body
+```
+
+Two obligations this model inherits from the body it acts on. The inertia
+tensor must be the one **about the pivot**, which `build_body` produces via
+the parallel-axis shift when a pivot is specified (§4.5, DESIGN §3.5); and
+the classic tractable top has `pivot_to_com_body` along the symmetry axis,
+the one displacement that keeps the tensor diagonal. The steady-precession
+rate `M g l / (I_3 omega_3)` that this configuration admits is developed as
+an analytic oracle and overlay in §9 (DESIGN §5.3, §8), not here.
+
+### 6.4 Viscous damping
+
+A simple, honest external dissipation: a torque opposing the angular
+velocity (DESIGN §5.4). It is the right model for a body immersed in a
+fluid or dragging on its mount — and, as §6.5 insists, *not* a model of
+internal friction.
+
+```
+function make_viscous_damping(damping_coefficient):
+    function torque_body(time, state, body):
+        # Its power is Gamma . omega = -c |omega|^2 <= 0 (DESIGN 5.4),
+        # so energy falls monotonically and the body spins down. Angular
+        # momentum falls too, because this is a genuine external torque.
+        return -damping_coefficient * state.angular_velocity_body
+    return model exposing torque_body
+```
+
+### 6.5 Internal dissipation is not a torque
+
+Internal dissipation — a body losing energy to its own deformation while
+nothing outside exerts a torque — is defined by **angular momentum
+conserved and energy not**. No external torque can produce that pairing:
+`Gamma = 0` is what conserving `L` requires, and it forces
+`Gamma . omega = 0` and hence constant energy. Nor can a *rigid* body,
+whose motion is already fully determined by fixed `L_space` and constant
+body-frame `I`, with no freedom left to dissipate. So internal dissipation
+is a statement that the body is **not rigid** (DESIGN §5.5).
+
+For that reason it does **not** implement the §6.1 interface. It belongs to
+a separate category of *state modifiers* applied after the torque sum,
+constrained to hold `angular_momentum_space` fixed while reducing
+`kinetic_energy` — driving the body toward rotation about its
+maximum-moment axis, the minimum-energy state at fixed `|L|`. It is **not
+scheduled for the first version** and carries no pseudocode here; it is
+named so that the torque interface is not mistakenly widened to hold
+something that does not belong in it (DESIGN §5.5, VISION Principle 12).
+
+### 6.6 Composition and the ordering rule
+
+The total torque is the sum over all active models (§5.3). Addition
+commutes, so the *physics* is order-independent — but floating-point
+addition is **not associative**, and ARCHITECTURE §6.4 promises bit-for-bit
+identical trajectories. The model list therefore has a fixed order,
+recorded in the scenario (§11) and iterated in that recorded order by
+`total_torque_body`. This costs nothing and removes an irreproducibility
+that would otherwise surface only as a slowly growing last-digit
+difference — nearly impossible to diagnose after the fact (DESIGN §5.6).
+
+### 6.7 Room for later models
+
+Because nothing in §5 or §6 names a specific torque, later ones arrive as
+additions (DESIGN §5.7). Two are anticipated, and both already fit the
+§6.1 interface:
+
+- **Electromagnetic torque** (VISION Future Direction 3), of the form
+  `cross(magnetic_moment, magnetic_field)` — orientation-dependent,
+  exactly as gravity is.
+- **Driven or time-dependent torque**, for forced-precession
+  demonstrations, which is the reason `time` sits in the signature though
+  no shipping model reads it yet.
