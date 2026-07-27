@@ -210,12 +210,15 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       axis (DESIGN §3.4) in principal_frame_of — only bites for a
       re-diagonalized symmetric top (off-axis pivot); natural-orientation
       primitives take the diagonal shortcut.
-- [ ] Next: `scenario/` (PSEUDOCODE §12) — the two-zone schema
-      (`scenario.py`, `fidelity.py`) and TOML serialization (with the
-      tomllib/tomli fallback and the pint units boundary), then a
-      run_batch wrapper that unpacks a scenario. Still pending afterward:
-      the conservation monitor (§8), analytic solutions (§9), Poinsot and
-      frames (§10, §11), and the render/ui interactive tier.
+- [x] `core/units.py` (PSEUDOCODE §12.4, ARCH §5.5) — the pint boundary:
+      parse_quantity turns an authored string into a bare SI float with a
+      dimension check. 8 unit tests. 102 total.
+- [ ] Next: `scenario/` (PSEUDOCODE §12) — the two-zone schema holding both
+      the authored and the resolved forms (per §12.6), then TOML
+      serialization (tomllib/tomli read fallback, tomli-w write) and a
+      run_batch wrapper. Still pending afterward: the conservation monitor
+      (§8), analytic solutions (§9), Poinsot and frames (§10, §11), and the
+      render/ui interactive tier.
 
 ---
 
