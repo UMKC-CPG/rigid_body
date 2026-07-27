@@ -73,9 +73,13 @@ algorithmic subset of DESIGN. Status is tracked in its own Contents
 table; this list records only what remains.
 
 - [x] §1 The simulation loop (DESIGN §4.2, §6, §7, §12, §14; ARCH §6).
-- [ ] §2 Orientation mathematics (DESIGN §1.3, §2.2, §2.4, §2.6). **Next
-      section** — the foundation §1 and everything else call into.
-- [ ] §3–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+- [x] §2 Orientation mathematics (DESIGN §1.3, §2.2, §2.4, §2.6) — the
+      quaternion foundation §1 and everything else call into.
+- [x] §3 State and derived quantities (DESIGN §2.1, §2.5) — the state
+      record and the momentum/energy read-outs, with the torque-free
+      invariants the monitor and Poinsot lean on.
+- [ ] §4 Inertia and body construction (DESIGN §3). **Next section.**
+- [ ] §5–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
       order, ending with §12 (the exact TOML key layout, per §11.7) and
       §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
 

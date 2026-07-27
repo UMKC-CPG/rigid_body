@@ -77,7 +77,7 @@ is an implementation detail of the code level, not of this one.
 | --- | --- | --- | --- |
 | 1 | The simulation loop | §4.2, §6, §7, §12, §14 | written |
 | 2 | Orientation mathematics | §1.3, §2.2, §2.4, §2.6 | written |
-| 3 | State and derived quantities | §2.1, §2.5 | not yet written |
+| 3 | State and derived quantities | §2.1, §2.5 | written |
 | 4 | Inertia and body construction | §3 | not yet written |
 | 5 | Equations of motion | §4 | not yet written |
 | 6 | Torque models | §5 | not yet written |
@@ -451,3 +451,89 @@ zero and carry no information; only `R[1][0]` and `R[0][0]` still vary, and
 they encode a single combination — which is exactly the coordinate
 singularity DESIGN §1.3 forbids the integrator to touch, surfacing here as
 an honest label instead of numerical noise.
+
+---
+
+## 3. State and Derived Quantities
+
+DESIGN §2.1 fixes what the integrator advances; DESIGN §2.5 fixes what is
+read back off it. This section states the state record and the pure
+functions that compute the derived quantities, keeping the two firmly
+apart: the state is the small thing that is stepped and stored, and
+everything else is recomputed from it on demand, so the two can never fall
+out of agreement.
+
+### 3.1 The integrated state
+
+The state is the seven numbers of DESIGN §2.1, carried as the two-field
+record the notation section introduced. Both fields are bare SI floats:
+units live only at the scenario boundary (ARCHITECTURE §5.5), and nothing
+at this level holds a unit object.
+
+```
+record State:
+    body_to_space_quaternion    # 4 numbers, scalar-first, unit norm
+    angular_velocity_body       # 3 numbers, body principal axes
+```
+
+The unit-norm invariant on the quaternion is established when the state is
+built from authoring input (the §2.4 builders already return unit
+quaternions) and maintained thereafter by the integrator's per-step
+renormalization (§2.3, DESIGN §6.3).
+
+**Translation is not in the state** (DESIGN §2.1). For a freely tumbling
+body the center of mass drifts uniformly and decouples from the rotation;
+for the heavy top the pivot is fixed. Rotation is the whole subject, so the
+state carries orientation and angular velocity and nothing else. The
+flat seven-number array DESIGN §2.1 reserves for a future compiled kernel
+is a code-level packing detail and is not modeled here.
+
+### 3.2 Derived quantities
+
+These are computed from the state and the body, never stored alongside
+them, so they cannot silently disagree with the state they summarize
+(DESIGN §2.5). Each is a pure function. The `principal_moments` they read
+belong to the body constructed in §4.
+
+```
+function angular_momentum_body(state, body):
+    # Componentwise because the body frame IS the principal-axis frame
+    # (DESIGN 1.1, 2.5), where the inertia tensor is diagonal.
+    (omega_1, omega_2, omega_3) <- state.angular_velocity_body
+    (I_1, I_2, I_3)             <- body.principal_moments
+    return (I_1*omega_1, I_2*omega_2, I_3*omega_3)
+
+function angular_momentum_space(state, body):
+    # The SAME vector in space components. DESIGN 2.5 writes this as
+    # body_to_space_matrix * L_body; rotating the single vector by the
+    # sandwich (2.2) is the identical result without forming the matrix.
+    momentum_body <- angular_momentum_body(state, body)
+    return rotate_body_to_space(state.body_to_space_quaternion,
+                                momentum_body)
+
+function kinetic_energy(state, body):
+    (omega_1, omega_2, omega_3) <- state.angular_velocity_body
+    (I_1, I_2, I_3)             <- body.principal_moments
+    return 0.5 * (I_1*omega_1^2 + I_2*omega_2^2 + I_3*omega_3^2)
+```
+
+### 3.3 The invariants the motion preserves
+
+Under **torque-free** motion two of the quantities above are constant, and
+this is the fact the rest of the program leans on (DESIGN §2.5):
+
+- `angular_momentum_space` is a fixed vector. Note it is the *space-frame*
+  form that is conserved: the body-frame components `angular_momentum_body`
+  change continuously as the body tumbles beneath the fixed vector, and
+  that very difference between the two frames is something worth showing a
+  student (§11, DESIGN §10).
+- `kinetic_energy` is constant.
+
+Because rotation preserves length, `norm(angular_momentum_body)` and
+`norm(angular_momentum_space)` are equal and are themselves conserved; the
+magnitude of the angular momentum is frame-independent. These two
+invariants are what the conservation monitor watches (§8), the two numbers
+the Poinsot construction is built from (§10), and among the sharpest
+oracles the test suite has (ARCHITECTURE §8.2). When a torque is present
+they are no longer conserved, and the monitor reports drift rather than
+asserting constancy.
