@@ -58,9 +58,10 @@ controls) and the refine edits are drafted and awaiting commit.
 - The §8.4 elliptic solution is numerically verified
   (`dev/spikes/free_top_elliptic.py`, passing). PSEUDOCODE and code for
   `analytic_solutions.py` must reproduce the forms that spike certifies.
-- Two DESIGN forward-obligations for the code level: `numerical_inertia.py`
-  must reproduce §3.2 to a stated tolerance (§3.7), and the TOML schema
-  (§11.7) must be given its exact key layout in PSEUDOCODE.
+- DESIGN forward-obligation still open for the code level:
+  `numerical_inertia.py` must reproduce §3.2 to a stated tolerance (§3.7).
+  (The other one — the exact TOML key layout §11.7 deferred to PSEUDOCODE —
+  is now discharged in PSEUDOCODE §12.3.)
 
 ---
 
@@ -112,11 +113,13 @@ table; this list records only what remains.
       ways (express_in_space/express_in_body), the frame-view choice of
       what holds still, the frame-free invariants, L in both frames with
       its polhode-shadowing companion curve, and the Poinsot pairing.
-- [ ] §12 Scenario load and save (DESIGN §11). **Next section** — this is
-      the one to give the full, exact TOML key layout (§11.7); it was
-      deferred earlier and is now due.
-- [ ] §13–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
-      order (trajectory retention, scene description, controls and time).
+- [x] §12 Scenario load and save (DESIGN §11) — the two-zone plain-data
+      scenario, the full concrete TOML key layout (§11.7's deferred
+      deliverable, now given), the units/precision/versioning constraints,
+      and load/save with the resolved-vs-recomputed body consistency check.
+- [ ] §13 Trajectory retention (DESIGN §12). **Next section.**
+- [ ] §14–§15 follow the Contents table in `PSEUDOCODE.md` (scene
+      description, controls and time).
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining

@@ -86,7 +86,7 @@ is an implementation detail of the code level, not of this one.
 | 9 | Analytic solutions | §8 | written |
 | 10 | Poinsot geometry | §9 | written |
 | 11 | Reference frames | §10 | written |
-| 12 | Scenario load and save | §11 | not yet written |
+| 12 | Scenario load and save | §11 | written |
 | 13 | Trajectory retention | §12 | not yet written |
 | 14 | Scene description | §13 | not yet written |
 | 15 | Controls and time | §14 | not yet written |
@@ -1994,3 +1994,210 @@ dispel. Finally, each frame's axes are drawn and labeled — space `X, Y, Z`
 and body `1, 2, 3` (§1.1 names) — and which palette carries which frame,
 and the panel sizes, are labeled presentation choices deferred to §14
 (VISION Principles 6 and 12), as §10.2 deferred the ellipsoid's scale.
+
+---
+
+## 12. Scenario Load and Save
+
+Everything the tool computes flows from one object, the scenario, and
+VISION Goal 11 asks that a complete demonstration be saved and restored
+*exactly* (DESIGN §11). DESIGN settled the format as TOML and its three
+constraints, and handed this level one job: fix the exact key layout. §12.3
+is that layout; the rest is the load and save that honor it.
+
+### 12.1 Plain data, and the one rule
+
+A scenario is plain data — no functions, no live objects, no reference to
+the machine that wrote it — which is what lets it cross the tier boundary
+and travel between users (DESIGN §11.1). One rule governs what it holds
+(ARCHITECTURE §7):
+
+> Any value that can affect the computed trajectory lives in the scenario,
+> and the scenario records the **resolved** value that was used — never a
+> reference to a default another machine might resolve differently.
+
+An rc file may supply a default and a command-line flag may override it,
+but once resolved the value is written in. The test is blunt: handing the
+file to another user on another machine must reproduce the trajectory bit
+for bit (ARCHITECTURE §6.4).
+
+### 12.2 Two zones: physics and presentation
+
+The fields split into two zones, and keeping them apart makes the
+reproducibility guarantee precise (DESIGN §11.2):
+
+- **Physics** — the body, the initial conditions, the ordered torque
+  models, and the integrator/fidelity/retention settings. These determine
+  the trajectory, and the bit-for-bit guarantee attaches to them.
+- **Presentation** — the viewpoint, the frame and layout choice (§11.6),
+  and the palette (§14). These fix only what is *shown* of a trajectory
+  already determined.
+
+The division is structural, not cosmetic: the presentation zone can be
+edited freely and the trajectory does not move. A regression test asserts
+exactly this — perturb any presentation field, and the computed states are
+unchanged (ARCHITECTURE §8). Only the physics zone feeds the engine.
+
+### 12.3 The TOML key layout
+
+The concrete layout follows. Authored quantities are unit-bearing strings
+(§12.4); every field the engine reads is also present in resolved, bare-SI
+form. Resolved floats are shown abbreviated here but are written at full
+precision in practice (§12.4).
+
+```toml
+schema_version = "1.0"
+
+# ---- PHYSICS ZONE (determines the trajectory) --------------------
+
+[body.specification]           # human-editable handle (DESIGN 11.3)
+kind = "parallelepiped"        # sphere | ellipsoid | parallelepiped |
+                               # cube | cylinder | cone | tetrahedron |
+                               # octahedron | dodecahedron | icosahedron |
+                               # moments   (direct entry, DESIGN 3.6)
+edge_lengths = ["0.10 m", "0.15 m", "0.30 m"]   # keys vary by kind
+density = "2700 kg/m^3"
+pivot_from_com = ["0 m", "0 m", "0.20 m"]        # optional (DESIGN 3.5)
+
+[body.resolved]                # the four provider items (DESIGN 3.7),
+                               # bare SI, frozen (DESIGN 3.8, ARCH 7)
+total_mass = 1.0935
+center_of_mass = [0.0, 0.0, 0.0]
+principal_moments = [2.7576e-03, 2.0770e-03, 1.0246e-03]
+principal_axes = [[1.0, 0.0, 0.0],
+                  [0.0, 1.0, 0.0],
+                  [0.0, 0.0, 1.0]]
+
+[initial_conditions]
+# Orientation authored ONE of two ways (DESIGN 11.4):
+orientation_euler_zxz = ["0 deg", "12 deg", "0 deg"]  # phi, theta, psi
+# orientation_axis_angle = { axis = [0, 0, 1], angle = "30 deg" }
+# ...and always recorded resolved, scalar-first unit quaternion, which
+# pins the double-cover sign (DESIGN 2.2, 11.4):
+orientation_quaternion = [0.99452, 0.10453, 0.0, 0.0]
+# Body-frame angular velocity, INCLUDING the deliberate off-intermediate
+# tilt the Dzhanibekov flip needs (DESIGN 4.4, 11.4):
+angular_velocity_body = ["0.05 rad/s", "8.0 rad/s", "0.05 rad/s"]
+angular_velocity_body_si = [0.05, 8.0, 0.05]
+
+# Ordered array of tables; the ORDER is recorded physics (DESIGN 11.5).
+# An empty array (no [[torque_models]]) is torque-free motion (5.2).
+[[torque_models]]
+type = "gravity"                                      # DESIGN 5.3
+gravity = ["0 m/s^2", "0 m/s^2", "-9.81 m/s^2"]       # space frame
+pivot_lever_arm_body = ["0 m", "0 m", "0.20 m"]
+
+[[torque_models]]
+type = "viscous_damping"                              # DESIGN 5.4
+damping_coefficient = "1.0e-3 N*m*s"
+
+[fidelity]                     # DESIGN 11.6
+integrator = "rk4"             # rk4 | implicit_midpoint | splitting
+time_step = 5.0e-4             # dt, seconds (bare SI, resolved)
+substeps_per_frame = 20        # ARCH 6.3
+integration_span = 60.0        # seconds; the batch run length (1.3)
+# implicit integrators only -- the deterministic stopping rule (6.5):
+# implicit_stopping = { rule = "fixed_iterations", count = 4 }
+
+[retention]                    # bounded so replay reproduces (DESIGN 12)
+limit_samples = 100000
+
+# ---- PRESENTATION ZONE (only what is shown) ----------------------
+
+[presentation]                 # editing here never moves the trajectory
+frame = "space"                # space | body
+layout = "side_by_side"        # side_by_side | switching (DESIGN 10.6)
+palette = "default"
+
+[presentation.camera]          # the eye, independent of the frame (11.6)
+position = [3.0, 2.0, 1.5]
+target = [0.0, 0.0, 0.0]
+up = [0.0, 0.0, 1.0]
+```
+
+### 12.4 Units, precision, and versioning
+
+Three format constraints, all met by the layout above (DESIGN §11.7):
+
+- **Units live only at this boundary.** Authored quantities are strings
+  like `"0.5 kg*m^2"`, parsed to SI floats exactly once, on load, by the
+  one module permitted to touch the units library. Below `scenario/`
+  everything is bare SI (§3.1), so the resolved fields carry no unit
+  objects.
+- **Resolved physics fields round-trip exactly.** The SI floats that
+  determine the trajectory are written with shortest-round-trip formatting —
+  enough digits to recover the identical IEEE double — so the readable and
+  the exact forms coexist rather than compete.
+- **The schema carries a version.** `schema_version` lets a future reader
+  interpret an old file, or refuse it with a clear message, rather than
+  misreading a renamed field in silence.
+
+### 12.5 Loading
+
+Loading parses the document, resolves units to SI, and checks the recorded
+body summary against a fresh recomputation — the §8.4 identity oracle
+applied to storage (DESIGN §11.3).
+
+```
+function load_scenario(path):
+    document <- parse_toml(read_file(path))
+    require is_supported(document.schema_version)    # §12.4; else refuse
+
+    # build_scenario_record parses every unit-bearing string to a bare SI
+    # float (§12.4) and assembles the physics and presentation zones.
+    scenario <- build_scenario_record(document)
+
+    # Storage consistency (DESIGN 11.3): recompute the inertial summary
+    # from the specification and compare it to the recorded resolved one.
+    # A mismatch means the spec, the provider, or the file has drifted --
+    # report it, never silently prefer one side.
+    if scenario.body.specification is not none:
+        recomputed <- inertia_provider(
+                          scenario.body.specification.shape,
+                          scenario.body.specification.density)     # 4.3
+        if not agrees(recomputed, scenario.body.resolved, TOLERANCE):
+            report_body_mismatch(recomputed, scenario.body.resolved)
+
+    return scenario
+
+function resolve_initial_state(scenario):
+    # The seven-number State (§3.1) the engine starts from, read straight
+    # from the RESOLVED fields so no conversion re-runs on reload (11.4).
+    return { body_to_space_quaternion =
+                 scenario.initial_conditions.orientation_quaternion,
+             angular_velocity_body =
+                 scenario.initial_conditions.angular_velocity_body }
+```
+
+A body given by moments alone (§4, DESIGN §3.6) has no `[body.specification]`
+shape; its `[body.resolved]` simply *is* the entry, and the consistency
+check is skipped because there is nothing to recompute against.
+
+### 12.6 Saving
+
+Saving writes both the authored forms (for readability) and the resolved
+forms (for exact reproduction), with every SI float formatted at
+shortest-round-trip precision so the identical double returns on load
+(§12.4). The torque array is written in its recorded order (§11.5), which
+TOML preserves.
+
+```
+function save_scenario(scenario, path):
+    document <- new_toml_document()
+    document.schema_version <- CURRENT_SCHEMA_VERSION
+
+    # Physics zone (§12.2).
+    write_body(document, scenario.body)                # spec + resolved
+    write_initial_conditions(document,
+                             scenario.initial_conditions)
+    write_torque_models(document, scenario.torque_models)   # in order
+    write_fidelity(document, scenario.fidelity)
+    write_retention(document, scenario.retention)
+
+    # Presentation zone (§12.2): editing it never moves the trajectory.
+    write_presentation(document, scenario.presentation)
+
+    # format_toml writes floats with shortest-round-trip precision, the
+    # one property the bit-for-bit guarantee (§12.1) depends on.
+    write_file(path, format_toml(document))
+```
