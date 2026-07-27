@@ -94,10 +94,15 @@ table; this list records only what remains.
       with the state arithmetic, fixed-step RK4, the post-step quaternion
       renormalization, the two error regimes, and the structure-preserving
       (symplectic) path designed for the long regime.
-- [ ] §8 Conservation monitor (DESIGN §7). **Next section.**
-- [ ] §9–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
-      order, ending with §12 (the exact TOML key layout, per §11.7) and
-      §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
+- [x] §8 Conservation monitor (DESIGN §7) — the live balance-not-constancy
+      residual against the §5.5 rate laws, the fixed-scale/per-unit-time
+      reporting with the magnitude/direction split, the secular-trend
+      tracker, the report-never-correct discipline, and the Poinsot
+      identity offered as a test oracle only.
+- [ ] §9 Analytic solutions (DESIGN §8). **Next section** — must reproduce
+      the forms the `free_top_elliptic.py` spike certifies.
+- [ ] §10–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+      order, ending with §12 (the exact TOML key layout, per §11.7).
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining

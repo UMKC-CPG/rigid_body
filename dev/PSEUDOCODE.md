@@ -82,7 +82,7 @@ is an implementation detail of the code level, not of this one.
 | 5 | Equations of motion | §4 | written |
 | 6 | Torque models | §5 | written |
 | 7 | Integrators | §6 | written |
-| 8 | Conservation monitor | §7 | not yet written |
+| 8 | Conservation monitor | §7 | written |
 | 9 | Analytic solutions | §8 | not yet written |
 | 10 | Poinsot geometry | §9 | not yet written |
 | 11 | Reference frames | §10 | not yet written |
@@ -1250,3 +1250,199 @@ is departure from the *rate* `d(energy)/dt = Gamma . omega` (§5.5), and RK4
 measured against that rate is the appropriate tool. The scenario selects an
 integrator suited to its physics — the whole reason §7.1 makes the
 integrator a selectable strategy.
+
+---
+
+## 8. Conservation Monitor
+
+The monitor is the on-screen face of VISION Principle 2: at any moment a
+student can tell whether what they see is physics or numerical artifact.
+Almost everything it needs was derived already — §3.2 gives the two
+quantities it watches, and §5.5 gives the exact rate laws they obey. This
+section specifies *how it presents* them, and the one decision that makes
+it work under applied torque: it checks the **balance**, not constancy
+(DESIGN §7).
+
+### 8.1 A live diagnostic, not a test fixture
+
+The monitor is a first-class runtime component (ARCHITECTURE §3.4), shown
+live beside the motion every frame — distinct from the offline oracles of
+ARCHITECTURE §8.2, which use the same quantities to judge the integrator
+after the fact. It watches the `kinetic_energy` and the space-frame
+`angular_momentum_space` of §3.2, and it **recomputes** them from the seven
+numbers the integrator just advanced, so it never compares the state
+against a private copy that could itself be stale (DESIGN §7.1).
+
+```
+function new_monitor(initial_state, body, torque_models):
+    energy_0   <- kinetic_energy(initial_state, body)          # 3.2
+    momentum_0 <- angular_momentum_space(initial_state, body)  # 3.2
+
+    # Seed the trapezoid cache (8.2) with the rate laws at t = 0.
+    torque_0       <- total_torque_body(0, initial_state, body,
+                                        torque_models)          # 5.3
+    power_0        <- dot(torque_0, initial_state.angular_velocity_body)
+    torque_space_0 <- rotate_body_to_space(
+                          initial_state.body_to_space_quaternion,
+                          torque_0)
+
+    return {
+        body             = body,
+        torque_models    = torque_models,
+        energy_initial   = energy_0,
+        momentum_initial = momentum_0,
+        # Fixed reference scales (8.2 / DESIGN 7.3), set once and held. A
+        # floor keeps the divisor away from zero for a nearly-still body.
+        energy_scale     = max(energy_0, ENERGY_FLOOR),
+        momentum_scale   = max(norm(momentum_0), MOMENTUM_FLOOR),
+        # Running predicted-change accumulators (8.2).
+        energy_predicted_change   = 0,
+        momentum_predicted_change = (0, 0, 0),
+        # Previous-sample cache for the trapezoid quadrature.
+        last_time         = 0,
+        last_power        = power_0,
+        last_torque_space = torque_space_0,
+        # Secular-trend tracker (8.2, the trend part).
+        residual_trend    = new_trend_tracker() }
+```
+
+### 8.2 The residual: balance, not constancy
+
+A monitor that watched for **constancy** — hold the initial energy, report
+how far the current energy has moved — works for torque-free motion and
+fails exactly when it is needed most: the instant gravity is switched on
+(§6.3, the heavy top), energy and momentum are *supposed* to change, and a
+constancy check lights up with physics it has mistaken for error. The way
+out is §5.5: energy and momentum obey exact rate laws whether or not a
+torque acts, so the monitor accumulates the change those laws **predict**
+and compares it against the change actually observed. The difference is the
+residual — zero in exact arithmetic for any torque, and integration error
+alone when it departs from zero.
+
+```
+function monitor_update(monitor, state, time):
+    body <- monitor.body
+
+    # (DESIGN 7.1) Recompute the watched quantities from the advanced
+    # state. Read-only in the state (8.3).
+    energy   <- kinetic_energy(state, body)                    # 3.2
+    momentum <- angular_momentum_space(state, body)            # 3.2
+
+    # The instantaneous rate laws of 5.5.
+    torque_body  <- total_torque_body(time, state, body,
+                                      monitor.torque_models)   # 5.3
+    power        <- dot(torque_body, state.angular_velocity_body)
+    torque_space <- rotate_body_to_space(
+                        state.body_to_space_quaternion, torque_body)
+
+    # (DESIGN 7.2) Accumulate the PREDICTED change by trapezoidal
+    # quadrature over the step just taken. The quadrature runs on the
+    # integrator's own steps, so it carries discretization error of the
+    # same order (7.2 / DESIGN 6.2): the residual measures MUTUAL
+    # inconsistency of state and delivered impulse, not a ground truth
+    # the quadrature cannot supply.
+    dt <- time - monitor.last_time
+    energy_increment   <- 0.5 * (monitor.last_power + power) * dt
+    momentum_increment <- 0.5 * (monitor.last_torque_space
+                                 + torque_space) * dt
+    monitor.energy_predicted_change   <-
+        monitor.energy_predicted_change + energy_increment
+    monitor.momentum_predicted_change <-
+        monitor.momentum_predicted_change + momentum_increment
+
+    # (DESIGN 7.2) Residual = observed change - predicted change. With
+    # Gamma = 0 the accumulators vanish and it reduces to plain drift
+    # from the initial value, so torque-free is not a special case (5.2).
+    predicted_momentum <- monitor.momentum_initial
+                          + monitor.momentum_predicted_change
+    energy_residual    <- (energy - monitor.energy_initial)
+                          - monitor.energy_predicted_change
+    momentum_residual  <- momentum - predicted_momentum
+
+    # Cache this sample for the next trapezoid step.
+    monitor.last_time         <- time
+    monitor.last_power        <- power
+    monitor.last_torque_space <- torque_space
+
+    # (DESIGN 7.3) Normalize: relative to the FIXED scale and per unit
+    # simulated time, so the number is comparable across bodies and run
+    # lengths. A fixed scale (not the instantaneous energy) keeps a body
+    # spinning down under damping from sending a fine residual to
+    # infinity as its energy approaches zero.
+    elapsed <- max(time, TIME_FLOOR)
+    energy_drift_rate <- abs(energy_residual)
+                         / monitor.energy_scale / elapsed
+
+    # (DESIGN 7.3) A vector residual separates into two tells. Magnitude:
+    # is the size of the error growing? Direction: is L_space holding its
+    # orientation -- the invariable axis the Poinsot picture (10) is built
+    # on, whose wandering is visibly non-physical under torque-free motion.
+    magnitude_drift_rate <- norm(momentum_residual)
+                            / monitor.momentum_scale / elapsed
+    direction_drift_rate <- angle_between(momentum, predicted_momentum)
+                            / elapsed
+
+    report <- { energy_drift_rate    = energy_drift_rate,
+                magnitude_drift_rate = magnitude_drift_rate,
+                direction_drift_rate = direction_drift_rate }
+
+    # (DESIGN 7.4) Feed the trend tracker so a SECULAR residual -- small
+    # at every instant yet growing across periods -- is caught. This is
+    # the live counterpart of the long-regime growth test (7.4 / ARCH
+    # 8.4): a symplectic error stays bounded, a non-symplectic one grows.
+    monitor.residual_trend.record(time, report)
+    report.trend <- monitor.residual_trend.summary()
+
+    return report
+```
+
+The trend tracker itself is a small presentation helper: it records the
+drift rates over time and summarizes their growth across many periods,
+which is what separates a bounded symplectic error (§7.5) from a growing
+one (DESIGN §7.4). Its exact form is a display detail left to the code.
+
+### 8.3 It reports; it never corrects
+
+The monitor is strictly **read-only** with respect to the state — visible
+in `monitor_update`, which computes from `state` and returns a report but
+writes nothing back. It does **not** rescale the angular velocity to
+restore the initial energy, nor project the state onto a constant-`|L|`
+surface, though both are known drift-suppression tricks (DESIGN §7.5).
+
+They are refused for two reasons. The decisive one: a tool that quietly
+corrected the conserved quantities would be *manufacturing* the constancy
+it claims to verify — the exact inversion of VISION Principle 2, a student
+seeing energy pinned flat and concluding the integration was perfect when
+the flatness was imposed by hand. The mechanical one: writing back into the
+state would make the trajectory depend on the monitor, so toggling the
+display would change the physics, breaking ARCHITECTURE §6.4. The one
+legitimate correction in the whole loop is the quaternion renormalization
+of §7.3, and it is legitimate because it restores a constraint the
+representation *requires* — a unit quaternion is a rotation — rather than
+papering over an error in the physics.
+
+### 8.4 An identity is not a diagnostic
+
+One relation looks like a conservation check and is not. The Poinsot
+identity `2T = omega . L` holds at **every** instant, torque or none,
+because `L = I omega` makes `omega . L` equal to twice the kinetic energy
+by definition (§3.2). It is not a law the motion can violate; it is an
+algebraic identity among quantities the code computes three different ways.
+
+That makes it useless as a live drift monitor — it would read zero even on
+a hopelessly wrong trajectory — but valuable as a *code-consistency* oracle
+for the test suite (ARCHITECTURE §8.2), catching a `kinetic_energy` or an
+`angular_momentum_body` computed inconsistently with the state. It is
+therefore provided for the tests and deliberately **not** wired into the
+monitor of §8.1, where it would report a reassuring zero that means nothing
+(DESIGN §7.6).
+
+```
+function poinsot_identity_residual(state, body):
+    # 2T - omega . L: an identity, ~0 at every instant by construction,
+    # even on a wrong trajectory. A code-consistency oracle only (8.4),
+    # never a live diagnostic.
+    twice_energy <- 2 * kinetic_energy(state, body)             # 3.2
+    return twice_energy - dot(state.angular_velocity_body,
+                              angular_momentum_body(state, body))
+```
