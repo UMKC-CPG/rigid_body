@@ -82,8 +82,12 @@ table; this list records only what remains.
       the three physical assertions, the closed-form/provider seam, the
       diagonalization with handedness and degeneracy fixes, the pivot
       shift, classification, and the build_body constructor.
-- [ ] §5 Equations of motion (DESIGN §4). **Next section.**
-- [ ] §6–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+- [x] §5 Equations of motion (DESIGN §4) — Euler's equations, the pure
+      state_derivative, the additive body-frame torque total, the
+      intermediate-axis growth rate with its interface guard, and the
+      conservation rate laws the monitor leans on.
+- [ ] §6 Torque models (DESIGN §5). **Next section.**
+- [ ] §7–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
       order, ending with §12 (the exact TOML key layout, per §11.7) and
       §9 (the analytic forms the `free_top_elliptic.py` spike certifies).
 

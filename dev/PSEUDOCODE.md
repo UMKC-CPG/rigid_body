@@ -79,7 +79,7 @@ is an implementation detail of the code level, not of this one.
 | 2 | Orientation mathematics | §1.3, §2.2, §2.4, §2.6 | written |
 | 3 | State and derived quantities | §2.1, §2.5 | written |
 | 4 | Inertia and body construction | §3 | written |
-| 5 | Equations of motion | §4 | not yet written |
+| 5 | Equations of motion | §4 | written |
 | 6 | Torque models | §5 | not yet written |
 | 7 | Integrators | §6 | not yet written |
 | 8 | Conservation monitor | §7 | not yet written |
@@ -769,3 +769,150 @@ function build_body(scenario):
         intermediate_axis = intermediate_axis,
         geometry          = geometry }
 ```
+
+---
+
+## 5. Equations of Motion
+
+This section is the physics: the derivative the integrator steps. DESIGN
+§4 derives it. The `omega_dot` half is where the physics lives — Euler's
+equations — and the `q_dot` half is the pure bookkeeping of §2.3 that
+records how orientation follows the angular velocity. A torque enters only
+the first half; it never appears in `q_dot` (DESIGN §4.2).
+
+### 5.1 Euler's equations: the angular-acceleration half
+
+In the body principal-axis frame the inertia tensor is diagonal, so the
+vector equation `I omega_dot + omega x (I omega) = Gamma` separates into
+three scalar ones, and inverting `I` is a per-component scalar divide
+rather than a matrix solve (DESIGN §4.1).
+
+```
+function angular_acceleration_body(angular_velocity_body, body,
+                                   torque_body):
+    (omega_1, omega_2, omega_3) <- angular_velocity_body
+    (I_1, I_2, I_3)             <- body.principal_moments
+    (Gamma_1, Gamma_2, Gamma_3) <- torque_body
+    # Euler's equations (DESIGN 4.1). The (I_j - I_k) products are the
+    # gyroscopic term omega x (I omega), written out per axis.
+    return ( ((I_2 - I_3)*omega_2*omega_3 + Gamma_1) / I_1,
+             ((I_3 - I_1)*omega_3*omega_1 + Gamma_2) / I_2,
+             ((I_1 - I_2)*omega_1*omega_2 + Gamma_3) / I_3 )
+```
+
+The gyroscopic term carries the whole of free-rotation behavior, and it
+vanishes in exactly the two circumstances DESIGN §4.3 names: when `omega`
+lies along a principal axis (so two components are zero and the third is
+constant — rotation about a principal axis persists), and for a spherical
+top, where it is identically zero for every `omega`. That second case is
+why a cube tumbles as a sphere does (§4.6, DESIGN §3.3).
+
+### 5.2 The complete derivative
+
+The two halves close the seven-component system of DESIGN §2.1. This is the
+function `advance_one_substep` (§1.1) wraps in a closure and hands to the
+integrator; DESIGN §4.2 fixes its signature.
+
+```
+function state_derivative(time, state, body, torque_models):
+    # PURE: reads the state, returns a derivative, mutates nothing, so a
+    # multi-stage integrator (7) may evaluate it at trial states off the
+    # trajectory without the evaluations interfering (DESIGN 4.2).
+    quaternion            <- state.body_to_space_quaternion
+    angular_velocity_body <- state.angular_velocity_body
+
+    # Torque first, summed in body components (5.3).
+    torque_body <- total_torque_body(time, state, body, torque_models)
+
+    # The physics half and the bookkeeping half (DESIGN 4.2):
+    omega_rate      <- angular_acceleration_body(             # 5.1
+                           angular_velocity_body, body, torque_body)
+    quaternion_rate <- orientation_derivative(quaternion,     # 2.3
+                                              angular_velocity_body)
+
+    # The derivative carries the same two fields as the state, so the
+    # integrator advances each by the matching rate.
+    return { body_to_space_quaternion = quaternion_rate,
+             angular_velocity_body    = omega_rate }
+```
+
+### 5.3 How torque enters: the additive body-frame total
+
+DESIGN §4.5 constrains the torque in exactly two ways: it arrives in **body
+components**, because that is the frame Euler's equations are written in,
+and it is **additive**, so several models acting at once sum to a single
+`Gamma`. A torque naturally expressed in space — gravity is the obvious
+case — is rotated to body axes *inside its own model* (§6), not here, which
+is what lets this sum stay frame-uniform and lets §6 add models without
+touching §5.
+
+```
+function total_torque_body(time, state, body, torque_models):
+    total <- (0, 0, 0)
+    for model in torque_models:          # fixed order (DESIGN 5.6)
+        total <- total + model.torque_body(time, state, body)   # 6
+    return total
+```
+
+With an empty torque list the total is the zero vector, and the motion is
+torque-free — the case §3.3's invariants and the Poinsot construction (§10)
+describe.
+
+### 5.4 The intermediate-axis instability rate
+
+DESIGN §4.4 derives the Dzhanibekov flip rather than treating it as a
+curiosity, because the derivation yields a growth rate the tool and the
+test suite can both use. A small tilt off the **intermediate** axis grows
+as `exp(sigma t)`; the rate depends only on the moments and the spin rate.
+
+```
+function instability_growth_rate(body, spin_rate):
+    # DESIGN 4.4. Written in terms of the sorted moments so it does not
+    # depend on which axis is labeled intermediate; this specializes the
+    # axis-1 form (I_3 - I_1)(I_1 - I_2) / (I_2 I_3) of DESIGN 4.4.
+    if body.top_class != ASYMMETRIC:
+        return 0        # interface guard: no distinct moments, no flip
+    (I_min, I_mid, I_max) <- sorted(body.principal_moments)
+    return abs(spin_rate) * sqrt(
+        (I_max - I_mid) * (I_mid - I_min) / (I_min * I_max) )
+
+function estimate_time_to_flip(growth_rate, initial_tilt):
+    # Roughly when to tell a student to watch (DESIGN 4.4), from
+    # eps(t) = initial_tilt * exp(growth_rate * t) reaching order one.
+    if growth_rate = 0:
+        return infinity
+    return (1 / growth_rate) * ln(1 / initial_tilt)
+```
+
+The `top_class != ASYMMETRIC` guard is DESIGN §4.4's third use of `sigma`
+stated as code: rotation about the intermediate axis of a symmetric or
+spherical top has no instability to show, so the interface must not offer
+the demonstration for a body that provably cannot exhibit it. And a caution
+DESIGN §4.4 stresses: started *exactly* on the intermediate axis the body
+stays there forever, so the flip must be triggered by a deliberate,
+scenario-recorded initial tilt — never by rounding noise, which would make
+the demonstration irreproducible (VISION Goal 11).
+
+### 5.5 Conservation rates
+
+Two exact rate laws follow from the equations of motion and are the
+foundation of the conservation monitor (§8). They hold **whether or not** a
+torque acts, which is what keeps the monitor meaningful once gravity is
+switched on (DESIGN §4.6).
+
+```
+function energy_rate(state, torque_body):
+    # DESIGN 4.6: d(kinetic_energy)/dt = Gamma . omega, in body axes.
+    return dot(torque_body, state.angular_velocity_body)
+
+# The companion law is d(angular_momentum_space)/dt = Gamma_space: the
+# space-frame angular momentum changes at exactly the space-frame torque.
+# Both rates vanish when Gamma = 0, recovering the torque-free
+# conservation of energy and of L_space (§3.3, DESIGN 4.6).
+```
+
+The monitor does not test for constancy — that would go blind the instant a
+torque acted. It integrates these rates over each interval and compares the
+result against the observed change in energy and momentum, reporting the
+discrepancy. That discrepancy, not the raw drift, is the honest measure of
+integration error under torque (§8, DESIGN §4.6, VISION Principle 2).
