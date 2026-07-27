@@ -87,7 +87,7 @@ is an implementation detail of the code level, not of this one.
 | 10 | Poinsot geometry | §9 | written |
 | 11 | Reference frames | §10 | written |
 | 12 | Scenario load and save | §11 | written |
-| 13 | Trajectory retention | §12 | not yet written |
+| 13 | Trajectory retention | §12 | written |
 | 14 | Scene description | §13 | not yet written |
 | 15 | Controls and time | §14 | not yet written |
 
@@ -2201,3 +2201,181 @@ function save_scenario(scenario, path):
     # one property the bit-for-bit guarantee (§12.1) depends on.
     write_file(path, format_toml(document))
 ```
+
+---
+
+## 13. Trajectory Retention
+
+Replay (VISION Goal 8) and video export (Goal 11) need past states to
+remain available after they were computed. ARCHITECTURE §6.5 fixed only
+that retention is bounded, configured, and recorded in the scenario (§12);
+DESIGN §12 settled the policy, and this section specifies the buffer and
+its policies. The buffer is `dynamics/trajectory.py`: the engine writes to
+it, and the time controls (§15) read it back to drive replay.
+
+### 13.1 A cache over recomputable ground truth
+
+One fact changes the whole problem (DESIGN §12.1). By the determinism
+guarantee (ARCHITECTURE §6.4) the entire trajectory is a pure function of
+the scenario, so a dropped state is never truly lost — it can be recomputed
+from the scenario, its authoritative record. Retention is therefore a
+**cache** whose only purpose is *random access* — reaching a past instant
+by table lookup instead of re-integrating from the start — and every policy
+below is free to discard, because discarding trades memory for
+recomputation and never risks the data.
+
+The recomputation is exact because the state is **Markovian**: the
+derivative (§5.2) and every torque model (§6.1) read only the current state
+and time, never the history, so any stored state is a perfect restart point
+and re-integrating forward from it reproduces the original continuation
+bit-for-bit. §13.5 builds directly on this.
+
+### 13.2 Retention observes; it never writes back
+
+The buffer is strictly **read-only** with respect to the state, exactly as
+the monitor is (§8.3): the history is written to and read back for replay,
+but no value in it ever feeds the derivative that advances the motion. This
+is required by ARCHITECTURE §6.4 — if enabling retention or replay could
+alter a later state, toggling replay would change the physics. The buffer
+lives beside the integrator but holds no derivative and influences no
+future step, so the read-only property is a fact about data flow, not about
+where the module sits. Preserving the *whole* history rather than a bounded
+window is a separate path through the sink boundary, taken up in §13.6.
+
+### 13.3 What a retained sample holds
+
+A retained sample is the seven-number state of §3.1 and its simulated time,
+and nothing more. Everything a replayed frame displays — energy,
+space-frame momentum, Euler angles, the Poinsot surfaces — is recomputed
+from that state on demand, exactly as during a live run (§3.2), so a
+replayed frame is as internally consistent as a live one; storing those
+derived values would reintroduce the stale-cache hazard §3.2 exists to
+prevent.
+
+```
+record RetainedSample:
+    state                  # the seven numbers of §3.1
+    time                   # simulated time
+    monitor_accumulators   # optional; the one path-dependent exception
+```
+
+There is exactly one path-dependent exception (DESIGN §12.3). The monitor's
+accumulators (§8.2) are integrals over the run so far and cannot be rebuilt
+from a single state in isolation. Either the loop stashes those few scalars
+alongside each sample — the `monitor_accumulators` field above — or they
+are rebuilt by re-integration when a replay needs them (§13.5). Everything
+else recomputes pointwise; only the running balance carries history.
+
+### 13.4 The default: a bounded ring buffer
+
+The interactive default is a ring buffer of exact states, sized by the
+recorded retention limit (§12): the most recent window of the run at full
+resolution, one stored sample per substep, each new sample overwriting the
+oldest when it fills. Per-step work is constant — append and advance a
+pointer — and memory is a fixed block proportional to the window.
+
+```
+function new_trajectory(retention):
+    return { capacity   = retention.limit_samples,
+             samples    = array_of_size(retention.limit_samples),
+             count      = 0,        # how many appended so far
+             next_index = 0 }       # where the next append lands
+
+function trajectory_append(history, state, time):
+    # Constant work; when full, the new sample overwrites the OLDEST.
+    # Copies the state IN and never hands a reference back to the loop
+    # (§13.2). The loop may also record the monitor accumulators here.
+    history.samples[history.next_index] <-
+        { state = state, time = time }
+    history.next_index <- (history.next_index + 1) mod history.capacity
+    history.count      <- min(history.count + 1, history.capacity)
+
+function trajectory_read(history, cursor):
+    # Random access into the retained window by lookup, no re-integration.
+    # cursor 0 is the OLDEST retained sample, count-1 the newest. This is
+    # the history.read the frame loop calls for replay (§1.2).
+    require 0 <= cursor < history.count
+    oldest_index <- (history.next_index - history.count)
+                    mod history.capacity
+    sample <- history.samples[(oldest_index + cursor)
+                              mod history.capacity]
+    return (sample.state, sample.time)
+```
+
+This is the right default because the interactive gestures of Goal 8 are
+overwhelmingly *local in time* — scrubbing back to re-watch a flip,
+single-stepping a nutation, slowing the last few seconds all read the
+recent past the window holds exactly. What falls off the far end is the
+deep past, rarely sought and, by §13.1, recomputable when it is.
+
+### 13.5 Covering a long run: keyframe, then re-integrate
+
+A ring buffer does not give random access to an arbitrary instant of a long
+run within bounded memory. The exact way to do that follows from the Markov
+property (§13.1): store **keyframes** — exact states at a sparse, regular
+stride — and reach any instant by re-integrating forward from the nearest
+earlier keyframe.
+
+```
+record KeyframeStore:
+    stride                     # substeps between stored keyframes
+    keyframes                  # sparse, evenly spaced exact samples
+    dt, body, torques, integrator   # resolved once, to re-integrate
+
+function keyframe_read(store, target_time):
+    # Start at the nearest EARLIER keyframe and re-run the SAME engine
+    # step (§1.1) forward to the target. Exact, because re-integrating
+    # from an exact state reproduces the exact continuation (§13.1).
+    keyframe <- nearest_earlier_keyframe(store, target_time)
+    state    <- keyframe.state
+    time     <- keyframe.time
+    while time < target_time:
+        state <- advance_one_substep(state, time, store.dt, store.body,
+                                     store.torques, store.integrator)
+        time  <- time + store.dt
+    return (state, time)
+```
+
+Memory is bounded by the keyframe count, recomputation by the stride, both
+fixed. This is deliberately preferred over **downsampling with
+interpolation** — keeping every k-th state and interpolating between them —
+because interpolation does not reconstruct the trajectory; it invents a
+plausible path, and a quaternion interpolation only approximates the true
+orientation. Presenting that as the recorded motion would put an
+approximation on screen dressed as physics (VISION Principle 2). Where a
+coarse overview is genuinely useful — a scrub-bar thumbnail of a very long
+run — it is allowed, but the interpolated frames are **labeled approximate**
+and the exact path stays one re-integration away.
+
+### 13.6 Preserving the whole history: spilling to a sink
+
+When a run must be kept in full — to export a long span (Goal 11) or hand a
+complete session to the batch tier — the bounded window is not enough, and
+the whole stream goes through the sink boundary (ARCHITECTURE §5.2).
+Alongside the in-memory buffer the engine emits every state to a recording
+sink, and `hdf5_sink` writes the full stream to disk; memory stays bounded
+at the window while the disk accumulates everything, and a replay draws the
+recent past from the buffer and the deep past from the file. This is the
+`emit(sinks, ...)` of §1.2. Because `dynamics/` may not import `sinks/`
+(ARCHITECTURE §4), the fan-out is arranged **at the loop level**, not by the
+buffer reaching upward to a sink itself.
+
+This is where the two tiers meet in one mechanism. The batch tier *is* an
+engine whose only sink is `hdf5_sink` (§1.3); a recording interactive
+session is the same engine with a bounded window in memory and an
+`hdf5_sink` attached besides — so recording a live session is not a separate
+feature but that sink present from the start.
+
+### 13.7 Why the limit is recorded, when the trajectory is not affected
+
+ARCHITECTURE §6.5 requires the retention limit to travel in the scenario,
+which can look puzzling given §13.2: retention never touches the
+trajectory, so the states are the same whatever the limit. The resolution
+is the §12.2 zone split. The *trajectory* is reproducible unconditionally,
+because retention is read-only; what the limit governs is the *replay a
+viewer sees*, and that differs only under the lossy overview of §13.5,
+where a coarser stride yields coarser approximate frames between exact ones.
+Recording the limit makes even that approximate view reproducible — an
+instructor slowing through a flip in lecture and a student reloading later
+see the same thing down to the interpolation. For the exact policies of
+§13.4 and §13.6 the limit changes only memory use, never a displayed state.

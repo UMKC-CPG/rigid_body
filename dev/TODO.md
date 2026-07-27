@@ -117,9 +117,12 @@ table; this list records only what remains.
       scenario, the full concrete TOML key layout (§11.7's deferred
       deliverable, now given), the units/precision/versioning constraints,
       and load/save with the resolved-vs-recomputed body consistency check.
-- [ ] §13 Trajectory retention (DESIGN §12). **Next section.**
-- [ ] §14–§15 follow the Contents table in `PSEUDOCODE.md` (scene
-      description, controls and time).
+- [x] §13 Trajectory retention (DESIGN §12) — retention as a read-only
+      cache over the recomputable Markovian ground truth: the bounded ring
+      buffer, keyframe-plus-re-integration for long runs, the sink spill
+      for whole-history preservation, and why the limit is recorded.
+- [ ] §14 Scene description (DESIGN §13). **Next section.**
+- [ ] §15 Controls and time (DESIGN §14) — the last section.
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining
