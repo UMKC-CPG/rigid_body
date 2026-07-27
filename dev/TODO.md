@@ -187,10 +187,18 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       and energy_rate. 12 unit tests: exact match to the spike's
       euler_derivative, derivative-level conservation of energy and |L|,
       and the growth-rate formula. 68 unit tests total.
-- [ ] Next: `dynamics/integrators.py` (PSEUDOCODE §7) — fixed-step RK4 with
-      the field-wise state arithmetic and post-step renormalization, then
-      the engine. The payoff oracle: integrate state_derivative and compare
-      to the analytic elliptic solution of `free_top_elliptic.py`.
+- [x] `dynamics/integrators.py` (PSEUDOCODE §7) — fixed-step RK4 with the
+      field-wise state arithmetic (scale_state/add_states/advance_by), the
+      post-step quaternion renormalization, and select_integrator. 9 unit
+      tests, including the end-to-end oracle: RK4 integration of
+      state_derivative reproduces the analytic elliptic solution of
+      `free_top_elliptic.py` to < 1e-5, with fourth-order convergence and
+      conserved energy and |L|^2. 77 unit tests total.
+- [ ] Next: `dynamics/simulation_engine.py` (PSEUDOCODE §1.1, §1.3) — the
+      atomic substep and the batch run loop, emitting to a sink
+      (`sinks/sink_interface.py`); the interactive loop (§1.2) waits on
+      `render/` and `ui/`. Oracle: the determinism guarantee (ARCH §6.4,
+      §8.6) — same scenario, identical trajectory.
 
 ---
 
