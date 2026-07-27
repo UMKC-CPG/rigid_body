@@ -201,10 +201,19 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       and monitor), emit fan-out, and torque-free conservation through the
       engine. 83 tests total. The interactive loop (§1.2) waits on
       `render/` and `ui/`.
-- [ ] Next: `scenario/` (PSEUDOCODE §12) — the two-zone scenario schema
-      and TOML load/save (with the tomllib/tomli fallback on Python 3.10),
-      then a run_batch wrapper that unpacks a scenario. Still pending
-      afterward: the full build_body (diagonalization, pivot, validation),
+- [x] `body/rigid_body_model.py` build_body (PSEUDOCODE §4.2, §4.4, §4.5,
+      §4.7) — validate_moments/validate_inertia_tensor, parallel_axis_shift,
+      principal_frame_of (diagonal shortcut + eigh + handedness fix),
+      build_body_from_shape (with the optional pivot) and
+      build_body_from_moments. 11 unit tests. 94 total.
+- [ ] Deferred: degenerate-subspace axis canonicalization to the geometry
+      axis (DESIGN §3.4) in principal_frame_of — only bites for a
+      re-diagonalized symmetric top (off-axis pivot); natural-orientation
+      primitives take the diagonal shortcut.
+- [ ] Next: `scenario/` (PSEUDOCODE §12) — the two-zone schema
+      (`scenario.py`, `fidelity.py`) and TOML serialization (with the
+      tomllib/tomli fallback and the pint units boundary), then a
+      run_batch wrapper that unpacks a scenario. Still pending afterward:
       the conservation monitor (§8), analytic solutions (§9), Poinsot and
       frames (§10, §11), and the render/ui interactive tier.
 

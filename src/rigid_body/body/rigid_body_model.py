@@ -12,17 +12,20 @@ word "rigid" means (DESIGN Section 3.8). Changing any of it builds a new
 body rather than mutating this one, which keeps the scenario record
 unambiguous about which body produced which trajectory.
 
-The general constructor ``build_body`` -- diagonalization, the pivot
-shift, and validation (PSEUDOCODE Sections 4.2, 4.4, 4.5, 4.7) -- is
-assembled in a later step; this module supplies the record itself and the
-classification the equations of motion and the Poinsot geometry need.
+The constructors ``build_body_from_shape`` and ``build_body_from_moments``
+(PSEUDOCODE Section 4.7) assemble a body from a primitive through the
+closed-form provider or from directly entered moments, applying the
+physical-validity checks of Section 4.2, the optional parallel-axis pivot
+shift of Section 4.5, and the diagonalization of Section 4.4.
 """
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
+
+from rigid_body.body.analytic_inertia import analytic_inertia
 
 
 # Two principal moments are treated as equal when they agree to this
@@ -99,3 +102,155 @@ def classify_top(principal_moments,
     ascending = np.argsort(np.asarray(principal_moments, dtype=float))
     intermediate_axis = int(ascending[1]) + 1
     return TopClass.ASYMMETRIC, intermediate_axis
+
+
+class PrincipalFrame(NamedTuple):
+    """The principal moments and the axes they lie along.
+
+    ``axes`` are the columns of a right-handed rotation matrix; the moment
+    ``moments[k]`` lies along column ``k``.
+    """
+
+    moments: np.ndarray
+    axes: np.ndarray
+
+
+def validate_inertia_tensor(inertia_tensor, tolerance=1.0e-9):
+    """Check that a tensor is symmetric (DESIGN Section 3.1).
+
+    Symmetry follows immediately from the definition of the inertia
+    integral; a violation means the numbers are not an inertia tensor.
+    """
+    if not np.allclose(inertia_tensor, inertia_tensor.T, atol=tolerance):
+        raise ValueError("inertia tensor is not symmetric")
+
+
+def validate_moments(principal_moments):
+    """Check the two physical constraints on principal moments.
+
+    Every physical body has strictly positive moments that satisfy the
+    triangle inequalities (DESIGN Section 3.1). A failure is reported with
+    which constraint failed and by how much, rather than integrated into
+    nonsense.
+    """
+    moment_1, moment_2, moment_3 = (float(v) for v in principal_moments)
+    if not (moment_1 > 0.0 and moment_2 > 0.0 and moment_3 > 0.0):
+        raise ValueError(
+            f"a principal moment is not positive: {principal_moments}")
+    triples = [(moment_1, moment_2, moment_3),
+               (moment_2, moment_3, moment_1),
+               (moment_3, moment_1, moment_2)]
+    for first, second, third in triples:
+        if first + second < third:
+            raise ValueError(
+                f"triangle inequality fails: {first} + {second} < "
+                f"{third}, short by {third - first - second}")
+
+
+def parallel_axis_shift(inertia_about_center, mass, displacement):
+    """Shift an inertia tensor from the center of mass to a new point.
+
+    The parallel-axis theorem (DESIGN Section 3.5): ``I_new = I_com +
+    M (|d|^2 Identity - d (outer) d)`` with ``d`` the displacement from the
+    center of mass. The result is in general no longer diagonal in the old
+    axes, so it must be re-diagonalized (below) before Euler's equations
+    can use it.
+    """
+    displacement = np.asarray(displacement, dtype=float)
+    distance_squared = float(np.dot(displacement, displacement))
+    return inertia_about_center + mass * (
+        distance_squared * np.eye(3)
+        - np.outer(displacement, displacement))
+
+
+def _is_diagonal(inertia_tensor, tolerance=1.0e-12):
+    """True when the off-diagonal entries are negligibly small."""
+    off_diagonal = inertia_tensor - np.diag(np.diag(inertia_tensor))
+    scale = max(float(np.max(np.abs(np.diag(inertia_tensor)))), 1.0)
+    return float(np.max(np.abs(off_diagonal))) <= tolerance * scale
+
+
+def principal_frame_of(inertia_tensor):
+    """Return the principal moments and axes of an inertia tensor.
+
+    For a tensor already diagonal -- every primitive in its natural
+    orientation -- the axes are the coordinate axes and no eigenvalue
+    problem is solved (DESIGN Section 3.4). Otherwise a symmetric
+    eigensolver is used, and a left-handed eigenvector set is corrected to
+    right-handed by negating one axis, since a reflection is not a
+    rotation.
+
+    Known limitation: when two or three moments coincide the eigenvectors
+    of the degenerate subspace are not unique, and DESIGN Section 3.4 asks
+    that they be aligned to the body's geometric symmetry axis. That
+    canonicalization is not yet applied here; it matters only for a
+    re-diagonalized symmetric top (an off-axis pivot), since every
+    natural-orientation primitive takes the diagonal shortcut above.
+    """
+    if _is_diagonal(inertia_tensor):
+        return PrincipalFrame(
+            np.diag(inertia_tensor).copy(), np.eye(3))
+
+    moments, axes = np.linalg.eigh(inertia_tensor)
+    if np.linalg.det(axes) < 0.0:
+        axes = axes.copy()
+        axes[:, 0] = -axes[:, 0]
+    return PrincipalFrame(moments, axes)
+
+
+def build_body_from_shape(shape, density,
+                          pivot_from_center_of_mass=None):
+    """Assemble a RigidBody from a primitive shape (PSEUDOCODE 4.7).
+
+    Computes the inertia through the closed-form provider, optionally
+    shifts it to a pivot by the parallel-axis theorem, diagonalizes, checks
+    physical validity, and classifies. When a pivot is given it becomes the
+    rotation origin, and the stored center of mass is measured from it --
+    which is exactly the pivot-to-center-of-mass lever arm the gravity
+    torque model needs (DESIGN Section 5.3).
+    """
+    properties = analytic_inertia(shape, density)
+    inertia_tensor = properties.inertia_tensor
+    center_of_mass = properties.center_of_mass
+
+    if pivot_from_center_of_mass is not None:
+        displacement = np.asarray(pivot_from_center_of_mass, dtype=float)
+        inertia_tensor = parallel_axis_shift(
+            inertia_tensor, properties.mass, displacement)
+        center_of_mass = -displacement
+
+    validate_inertia_tensor(inertia_tensor)
+    frame = principal_frame_of(inertia_tensor)
+    validate_moments(frame.moments)
+    top_class, intermediate_axis = classify_top(frame.moments)
+    return RigidBody(
+        principal_moments=frame.moments,
+        principal_axes=frame.axes,
+        total_mass=properties.mass,
+        center_of_mass=center_of_mass,
+        top_class=top_class,
+        intermediate_axis=intermediate_axis,
+        geometry=shape)
+
+
+def build_body_from_moments(principal_moments, total_mass,
+                            center_of_mass=None):
+    """Assemble a RigidBody from directly entered moments (DESIGN 3.6).
+
+    For a body specified by its moments alone -- the Chandler wobble needs
+    only the ratio of the Earth's moments -- there is no shape to draw. The
+    moments are already principal, so the axes are the coordinate axes.
+    """
+    moments = np.asarray(principal_moments, dtype=float)
+    validate_moments(moments)
+    top_class, intermediate_axis = classify_top(moments)
+    if center_of_mass is None:
+        center_of_mass = np.zeros(3)
+    return RigidBody(
+        principal_moments=moments,
+        principal_axes=np.eye(3),
+        total_mass=float(total_mass),
+        center_of_mass=np.asarray(center_of_mass, dtype=float),
+        top_class=top_class,
+        intermediate_axis=intermediate_axis,
+        geometry=None)
