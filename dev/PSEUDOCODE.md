@@ -85,7 +85,7 @@ is an implementation detail of the code level, not of this one.
 | 8 | Conservation monitor | §7 | written |
 | 9 | Analytic solutions | §8 | written |
 | 10 | Poinsot geometry | §9 | written |
-| 11 | Reference frames | §10 | not yet written |
+| 11 | Reference frames | §10 | written |
 | 12 | Scenario load and save | §11 | not yet written |
 | 13 | Trajectory retention | §12 | not yet written |
 | 14 | Scene description | §13 | not yet written |
@@ -1831,3 +1831,166 @@ body-frame curve turning with the body, the space-frame curve holding still
 beneath it — is what turns Poinsot from a picture to memorize into the
 reason torque-free motion looks the way it does. §11 takes up presenting
 one motion in both frames at once.
+
+---
+
+## 11. Reference Frames
+
+VISION Goal 5 names the body-versus-space confusion the single most common
+conceptual error in this subject, and asks the tool to show one motion in
+both frames with each frame's axes drawn and labeled. §10 built the object
+that makes the distinction vivid; this section re-expresses one motion in
+either frame (DESIGN §10). Like §10 it works in physical coordinates —
+`reference_frames.py` draws nothing, so the batch tier can label a
+trajectory by frame with no renderer present.
+
+### 11.1 One motion, two descriptions
+
+There is only ever one physical motion. The body frame and the space frame
+are two coordinate systems over it, related at every instant by the single
+`body_to_space` rotation the state already carries (§2.2). Re-expressing a
+vector is that one mapping, applied one way or its inverse — nothing new is
+integrated (DESIGN §10.1).
+
+```
+function express_in_space(state, vector_body):
+    # v_space = body_to_space * v_body: the sandwich of §2.2.
+    return rotate_body_to_space(state.body_to_space_quaternion,
+                                vector_body)
+
+function express_in_body(state, vector_space):
+    # The inverse mapping: the space_to_body of §6.3.
+    return rotate_space_to_body(state.body_to_space_quaternion,
+                                vector_space)
+```
+
+The error Goal 5 targets is reading those two descriptions as two motions.
+The angular velocity in the body frame and in the space frame are the *same
+arrow*; only its components differ. A student who reads the changing
+body-frame components of a conserved vector as a change in the physics has
+made exactly the mistake the tool exists to prevent, and §11.3 and §11.4
+are built so the display does not invite it.
+
+### 11.2 A frame view is a choice of what holds still
+
+To *watch* the motion in a frame is to nail that frame's axes to the screen
+and let everything else move against them, so the two views differ in what
+is declared motionless (DESIGN §10.2):
+
+- **The space-frame view** holds the laboratory axes `X, Y, Z` fixed; the
+  body tumbles and `L` stands perfectly still, since `angular_momentum_space`
+  is constant under torque-free motion (§3.3). The view from the room.
+- **The body-frame view** holds the principal axes `1, 2, 3` fixed; now the
+  body is motionless and the space axes and `L` sweep around it. The view
+  from an observer riding the tumbling body.
+
+Both are faithful; neither is more correct. To draw either, each object is
+expressed in the *view* (screen) frame — a vector already in that frame is
+drawn as-is, and one in the other frame is carried across by §11.1. The
+tool never stores a second copy of the motion; it re-expresses the one it
+has.
+
+```
+function to_view(state, view_frame, vector, vector_frame):
+    # Express `vector` (given in vector_frame) in the held-still view.
+    if vector_frame = view_frame:
+        return vector                          # already fixed on screen
+    if view_frame = SPACE_FRAME:
+        return express_in_space(state, vector)  # body -> space (§11.1)
+    return express_in_body(state, vector)       # space -> body (§11.1)
+```
+
+### 11.3 What every frame agrees on
+
+A change of frame rotates a vector's components but cannot touch a scalar
+formed from them. Those scalars are presented **frame-free**, rather than
+duplicated under two headings, and everything else — the components of
+`omega`, of `L`, or of a torque — means nothing until a frame is named.
+This is the honesty point of the section; the monitor (§8) already trades
+in these scalars for the same reason.
+
+```
+function frame_invariants(state, body):
+    omega    <- state.angular_velocity_body
+    momentum <- angular_momentum_body(state, body)         # 3.2
+    two_ke   <- 2 * kinetic_energy(state, body)            # 3.2
+    return { kinetic_energy     = two_ke / 2,
+             twice_energy       = two_ke,                  # invariant 2T
+             momentum_squared   = norm(momentum)^2,        # invariant|L|^2
+             momentum_magnitude = norm(momentum),
+             omega_magnitude    = norm(omega),
+             omega_to_L_angle   = angle_between(omega, momentum),
+             principal_moments  = body.principal_moments }
+```
+
+`omega_to_L_angle` is computed from body-frame components here, but the
+answer is the same in either frame — that frame-independence is exactly why
+it belongs in this list.
+
+### 11.4 The angular momentum vector in each frame
+
+§3.3 flagged a fact and deferred its display to here: under torque-free
+motion `angular_momentum_space` is constant, yet `angular_momentum_body`
+changes continuously as the body tumbles beneath the fixed vector. Both are
+true of one arrow. In the space-frame view `L` is the fixed arrow
+everything organizes around — the axis the figure precesses about, the
+normal to the invariable plane (§10.3). In the body-frame view that same
+arrow swings around the principal axes on a cone, its length pinned at `|L|`
+while its three components rise and fall. A student watching the body-frame
+view sees `L` move and might call it a torque — but nothing is torquing it;
+the arrow is dead still in space, and it is the *frame* that turns. The
+tool draws `L` in both views precisely so the two accounts can be held
+against each other.
+
+That body-frame arrow shadows the polhode: because `L = I * omega`, as
+`omega` runs along the polhode (§10.4) the body-frame `L` runs along a
+companion curve on the sphere of radius `|L|`.
+
+```
+function angular_momentum_body_curve(polhode_points, body):
+    # L = I omega evaluated along the polhode: the companion curve of
+    # §11.4, on the fixed-radius |L| sphere. One phenomenon, two windows.
+    (I_1, I_2, I_3) <- body.principal_moments
+    return [ (I_1*w_1, I_2*w_2, I_3*w_3)
+             for (w_1, w_2, w_3) in polhode_points ]
+```
+
+### 11.5 The Poinsot pairing, both frames at once
+
+This is the hand-off §10.5 set up. One vector, `omega`, traces the polhode
+on the body and the herpolhode in space at the same instant, and the frame
+views put both on screen (DESIGN §10.5):
+
+- **In the body-frame view** the momental ellipsoid is held still (it is
+  fixed in the body, §10.2) and `omega` traces the **polhode** across its
+  surface while the invariable plane rolls around the outside.
+- **In the space-frame view** the invariable plane is held still (it is
+  fixed in space, §10.3) and `omega` traces the **herpolhode** on it while
+  the ellipsoid rolls across the plane.
+
+Same construction, same contact point, two anchors. Side by side, the
+polhode turns with the body in one panel while the herpolhode lies still in
+the other. The symmetric top makes the payoff quantitative: the two
+precession rates of §9.3 are exactly the rate of the polhode's circulation
+and of the herpolhode's precession, so the two-panel view shows both rates
+directly for one and the same top.
+
+### 11.6 Simultaneous or switching, and the camera
+
+Goal 5 allows the two views at once or by switching, a presentation
+decision, not a physical one. Two side-by-side panels make the §11.5
+comparison immediate but split the frame budget (ARCHITECTURE §9.3); a
+single toggling panel spends every pixel on one view and holds the other in
+the mind. Both are supported, and which is shown is a scenario setting
+recorded with the viewpoint (ARCHITECTURE §7).
+
+One distinction must stay sharp. The **frame** is which set of axes is held
+still; the **camera** is where the eye sits within that choice, and they
+are independent — a viewer may orbit the camera around a space-frame view
+without changing what is held fixed, and moving the camera is never a change
+of frame. Collapsing the two would reintroduce, at the level of the
+controls, the very body-versus-space confusion this section exists to
+dispel. Finally, each frame's axes are drawn and labeled — space `X, Y, Z`
+and body `1, 2, 3` (§1.1 names) — and which palette carries which frame,
+and the panel sizes, are labeled presentation choices deferred to §14
+(VISION Principles 6 and 12), as §10.2 deferred the ellipsoid's scale.

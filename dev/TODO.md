@@ -108,10 +108,15 @@ table; this list records only what remains.
       contact point, the invariable plane, and the polhode/herpolhode
       pair (analytic where §9 supplies it, numerical quadric intersection
       otherwise), with the separatrix stability story.
-- [ ] §11 Reference frames (DESIGN §10). **Next section.**
-- [ ] §12–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
-      order; §12 (the exact TOML key layout, per §11.7) was deferred
-      earlier and is the one to give its full key schema.
+- [x] §11 Reference frames (DESIGN §10) — the one mapping applied both
+      ways (express_in_space/express_in_body), the frame-view choice of
+      what holds still, the frame-free invariants, L in both frames with
+      its polhode-shadowing companion curve, and the Poinsot pairing.
+- [ ] §12 Scenario load and save (DESIGN §11). **Next section** — this is
+      the one to give the full, exact TOML key layout (§11.7); it was
+      deferred earlier and is now due.
+- [ ] §13–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+      order (trajectory retention, scene description, controls and time).
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining
