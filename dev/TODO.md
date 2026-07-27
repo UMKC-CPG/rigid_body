@@ -194,11 +194,19 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       state_derivative reproduces the analytic elliptic solution of
       `free_top_elliptic.py` to < 1e-5, with fourth-order convergence and
       conserved energy and |L|^2. 77 unit tests total.
-- [ ] Next: `dynamics/simulation_engine.py` (PSEUDOCODE §1.1, §1.3) — the
-      atomic substep and the batch run loop, emitting to a sink
-      (`sinks/sink_interface.py`); the interactive loop (§1.2) waits on
-      `render/` and `ui/`. Oracle: the determinism guarantee (ARCH §6.4,
-      §8.6) — same scenario, identical trajectory.
+- [x] `dynamics/simulation_engine.py` (PSEUDOCODE §1.1, §1.3) +
+      `sinks/sink_interface.py` — the atomic substep, the batch run loop,
+      emit/finalize, and the abstract Sink. 6 integration tests: the
+      determinism guarantee (bit-for-bit identical runs; read-only sinks
+      and monitor), emit fan-out, and torque-free conservation through the
+      engine. 83 tests total. The interactive loop (§1.2) waits on
+      `render/` and `ui/`.
+- [ ] Next: `scenario/` (PSEUDOCODE §12) — the two-zone scenario schema
+      and TOML load/save (with the tomllib/tomli fallback on Python 3.10),
+      then a run_batch wrapper that unpacks a scenario. Still pending
+      afterward: the full build_body (diagonalization, pivot, validation),
+      the conservation monitor (§8), analytic solutions (§9), Poinsot and
+      frames (§10, §11), and the render/ui interactive tier.
 
 ---
 
