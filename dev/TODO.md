@@ -172,10 +172,20 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       That check confirmed the icosahedron is `(3 + sqrt5) / 20`, and a
       stale factor-of-two candidate in the spike's own display table was
       corrected to match.
-- [ ] Next: `dynamics/equations_of_motion.py` (PSEUDOCODE §5, Euler's
-      equations), then `torque_models`, `integrators`, and the engine —
-      validated against `dev/spikes/free_top_elliptic.py` once the
-      integrator lands.
+- [x] `dynamics/state.py` (PSEUDOCODE §3) — the State record and the
+      derived quantities (body/space angular momentum, kinetic energy).
+      5 unit tests against exact identities.
+- [x] `body/rigid_body_model.py` (PSEUDOCODE §4.1, §4.6) — the RigidBody
+      record, the TopClass enum, and classify_top. 5 unit tests. The full
+      build_body constructor (diagonalization, pivot, validation) is
+      deferred to the scenario-assembly step.
+- [x] `dynamics/torque_models.py` (PSEUDOCODE §6) — GravityTorque,
+      ViscousDamping, and the fixed-order total. 5 unit tests, with
+      tau = r x F checked by hand. 56 unit tests total.
+- [ ] Next: `dynamics/equations_of_motion.py` (PSEUDOCODE §5) — the scalar
+      Euler equations and the pure state_derivative, validated against the
+      torque-free derivative and growth rate of
+      `dev/spikes/free_top_elliptic.py`; then `integrators` and the engine.
 
 ---
 
