@@ -84,7 +84,7 @@ is an implementation detail of the code level, not of this one.
 | 7 | Integrators | §6 | written |
 | 8 | Conservation monitor | §7 | written |
 | 9 | Analytic solutions | §8 | written |
-| 10 | Poinsot geometry | §9 | not yet written |
+| 10 | Poinsot geometry | §9 | written |
 | 11 | Reference frames | §10 | not yet written |
 | 12 | Scenario load and save | §11 | not yet written |
 | 13 | Trajectory retention | §12 | not yet written |
@@ -1677,3 +1677,157 @@ classroom regime the two curves coincide and the message is
 part, and that parting is the visible signature of secular integration
 error — the overlay is what lets a student see which curve is physics and
 which is drift (VISION Principle 2, Goal 9).
+
+---
+
+## 10. Poinsot Geometry
+
+The Poinsot construction is a way of *seeing* torque-free motion (DESIGN
+§9): a fixed ellipsoid attached to the body rolls without slipping on a
+plane fixed in space, tracing one curve on the ellipsoid and another on the
+plane. Every piece is built from the two invariants of §3.3 — `2T` and
+`|L|^2` — so the whole construction exists only for torque-free motion,
+where those are conserved. This section computes *what* the surfaces and
+curves are; `poinsot.py` draws nothing, and the rendering choices are
+deferred to §14 (ARCHITECTURE §3.5), which is what lets the batch tier
+write a polhode to disk with no renderer present.
+
+### 10.1 The construction in one statement
+
+For torque-free motion the following is exactly true and is the whole of
+Poinsot (DESIGN §9.1): scale the angular velocity to
+`rho = omega / sqrt(2T)`; that point lies on the body's momental ellipsoid,
+the ellipsoid's tangent plane there is fixed in space and perpendicular to
+`L`, and the ellipsoid rolls on that plane without slipping as the body
+turns. The three clauses are §10.2, §10.3, and the rolling that follows,
+each a short calculation from the two invariants so a student can see the
+construction is derived, not decreed.
+
+### 10.2 The momental ellipsoid
+
+The momental ellipsoid is fixed in the body frame and is a property of the
+body alone, so §4 computes it once at construction. The scaled angular
+velocity `rho` rides on it.
+
+```
+function momental_ellipsoid(body):
+    # The surface I_1 x1^2 + I_2 x2^2 + I_3 x3^2 = 1 (DESIGN 9.2). The
+    # semi-axis along principal axis k is 1/sqrt(I_k) -- LONGEST along the
+    # SMALLEST moment, the direction the body spins about most easily.
+    (I_1, I_2, I_3) <- body.principal_moments
+    return { semi_axes = (1/sqrt(I_1), 1/sqrt(I_2), 1/sqrt(I_3)),
+             axes      = body.principal_axes }
+
+function poinsot_contact_point(state, body):
+    # rho = omega / sqrt(2T), the point where the ellipsoid touches the
+    # plane. It lies ON the ellipsoid, since rho . I . rho =
+    # (omega . I . omega)/(2T) = 1, using omega . I . omega = 2T (§3.2).
+    two_ke <- 2 * kinetic_energy(state, body)
+    return state.angular_velocity_body / sqrt(two_ke)
+```
+
+This ellipsoid is also the visual proxy for a body given by its moments
+alone, with no geometry to draw (§4, the Earth of VISION Goal 12): it is
+the object the dynamics actually cares about, drawable whether or not a
+shape was ever supplied. A drawing may instead scale to the equivalent
+*energy* ellipsoid `omega . I . omega = 2T`, so the tip of `omega` itself
+is the contact point — the same shape at a different size, a labeled
+presentation choice (§14, VISION Principle 12), not a change to the physics.
+
+### 10.3 The invariable plane
+
+The tangent plane at the contact point is fixed in space, and its constancy
+is the geometric face of the conserved `L` the monitor watches (§8.2).
+
+```
+function invariable_plane(state, body):
+    # The ellipsoid's outward normal at the contact point is
+    # grad(x . I . x) = 2 I rho ~ I omega = L (DESIGN 9.3), so the normal
+    # is PARALLEL to L. Because L is fixed under torque-free motion (§3.3),
+    # the plane's orientation is fixed; its distance sqrt(2T)/|L| is fixed
+    # too, since both 2T and |L| are conserved.
+    momentum_space <- angular_momentum_space(state, body)      # 3.2
+    l_magnitude    <- norm(momentum_space)
+    two_ke         <- 2 * kinetic_energy(state, body)
+    return { normal   = momentum_space / l_magnitude,   # the invariable
+                                                        # axis (§8.2, §9.3)
+             distance = sqrt(two_ke) / l_magnitude }
+```
+
+The ellipsoid rolls on this plane **without slipping** because the contact
+point `rho` is parallel to `omega`, the instantaneous axis of rotation, so
+the material point of the body there has zero velocity — it is the
+instantaneous pivot, and a point that is not sliding is in rolling contact.
+A wandering of the plane's normal on screen is therefore a visible report
+of numerical drift, not physics (§8.2).
+
+### 10.4 The polhode: the track on the body
+
+As the contact point moves it traces a closed curve fixed in the body
+frame — the **polhode**, the path of `omega` seen in the body (VISION Goal
+5). It is the intersection of the two invariant quadrics in `omega`-space.
+
+```
+function polhode(body, state, sample_count):
+    #   energy   quadric:  I_1 w1^2   + I_2 w2^2   + I_3 w3^2   = 2T
+    #   momentum quadric:  I_1^2 w1^2 + I_2^2 w2^2 + I_3^2 w3^2 = |L|^2
+    # The polhode is where these meet -- a closed body-frame curve whose
+    # exact shape is the §9 solution, by class:
+    if body.top_class = SPHERICAL:
+        # omega is constant; the polhode is a single point (§9.2).
+        return { single_point = state.angular_velocity_body }
+    if body.top_class = SYMMETRIC:
+        # A circle about the symmetry axis (§9.3).
+        return analytic_polhode_circle(body, state, sample_count)
+    # ASYMMETRIC: the verified Jacobi-elliptic curve (§9.4), sampled over
+    # one body period. poinsot.py uses this analytic form and intersects
+    # the quadrics numerically only where no analytic branch applies.
+    return analytic_polhode_elliptic(body, state, sample_count)
+```
+
+The two named wrappers sample the §9 analytic `omega` (a circle in §9.3, a
+period of `evaluate_free_asymmetric_top` in §9.4) into a list of body-frame
+points; `intersect_quadrics(body, two_ke, l_squared)` is the numerical
+fallback where no analytic branch fits. The **family** of polhodes on one
+ellipsoid is the §5.4 stability story made visible: near the largest- and
+smallest-moment axes they are small closed loops (stable steady rotation),
+divided by a **separatrix** crossing the intermediate axis. A polhode near
+that separatrix swings almost all the way to the opposite side before
+returning — the Dzhanibekov flip — and that separatrix is the `k -> 1` case
+whose period diverges in §9.4. The tennis-racket theorem is nothing to
+memorize; it is the shape of the polhodes near the middle axis.
+
+### 10.5 The herpolhode: the track in space
+
+The same contact point, viewed in the space frame, traces a different curve
+lying in the fixed invariable plane — the **herpolhode**, the path of
+`omega` seen in space (VISION Goal 5).
+
+```
+function herpolhode_point(state, body):
+    # The contact point mapped to SPACE components; it lands in the fixed
+    # invariable plane (§10.3). Accumulated over the trajectory, these
+    # points trace the herpolhode.
+    rho <- poinsot_contact_point(state, body)                  # 10.2
+    return rotate_body_to_space(state.body_to_space_quaternion, rho)
+
+function herpolhode_bounds(polhode_points, two_ke, plane_distance):
+    # The herpolhode is generally NOT closed: the body circulation and the
+    # space precession have an irrational rate ratio (the two rates of
+    # §9.3), so omega fills an annular BAND rather than retracing a loop.
+    # The band lies between two concentric circles. Each contact point
+    # sits at fixed height plane_distance above the plane (§10.3), so its
+    # radius there is sqrt(|rho|^2 - plane_distance^2); the extremes of
+    # |rho| over the polhode give the two bounding radii.
+    radii <- [ sqrt(norm(w / sqrt(two_ke))^2 - plane_distance^2)
+               for w in polhode_points ]
+    return { inner_radius = min(radii), outer_radius = max(radii) }
+```
+
+The pairing is the whole point of VISION Goal 5. One physical vector,
+`omega`, traces the polhode on the tumbling ellipsoid and the herpolhode on
+the fixed plane at the *same instant*. Watching the two together — the
+body-frame curve turning with the body, the space-frame curve holding still
+beneath it — is what turns Poinsot from a picture to memorize into the
+reason torque-free motion looks the way it does. §11 takes up presenting
+one motion in both frames at once.

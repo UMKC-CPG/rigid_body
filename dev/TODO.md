@@ -104,9 +104,14 @@ table; this list records only what remains.
       Jacobi elliptic functions (both branches, reproducing exactly the
       forms `free_top_elliptic.py` certifies), and the heavy-top
       steady-precession quadratic with its existence threshold.
-- [ ] §10 Poinsot geometry (DESIGN §9). **Next section.**
-- [ ] §11–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
-      order, ending with §12 (the exact TOML key layout, per §11.7).
+- [x] §10 Poinsot geometry (DESIGN §9) — the momental ellipsoid and
+      contact point, the invariable plane, and the polhode/herpolhode
+      pair (analytic where §9 supplies it, numerical quadric intersection
+      otherwise), with the separatrix stability story.
+- [ ] §11 Reference frames (DESIGN §10). **Next section.**
+- [ ] §12–§15 follow the Contents table in `PSEUDOCODE.md`, in DESIGN
+      order; §12 (the exact TOML key layout, per §11.7) was deferred
+      earlier and is the one to give its full key schema.
 
 **Resolved (DESIGN §6.1 signature).** DESIGN §6.1 now reads
 `advance(state, time, dt, derivative_function)`, with a clause explaining
