@@ -213,12 +213,18 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
 - [x] `core/units.py` (PSEUDOCODE §12.4, ARCH §5.5) — the pint boundary:
       parse_quantity turns an authored string into a bare SI float with a
       dimension check. 8 unit tests. 102 total.
-- [ ] Next: `scenario/` (PSEUDOCODE §12) — the two-zone schema holding both
-      the authored and the resolved forms (per §12.6), then TOML
-      serialization (tomllib/tomli read fallback, tomli-w write) and a
-      run_batch wrapper. Still pending afterward: the conservation monitor
-      (§8), analytic solutions (§9), Poinsot and frames (§10, §11), and the
-      render/ui interactive tier.
+- [x] `scenario/` (PSEUDOCODE §12) — the two-zone schema (`scenario.py`,
+      `fidelity.py`) holding both authored and resolved forms, and
+      `serialization.py`: TOML load/save (tomllib/tomli read, tomli-w
+      write), pint unit resolution, build_body_from_specification, the
+      resolved-vs-recomputed consistency check, and
+      run_batch_from_scenario. 6 integration tests. 108 tests total.
+      **The batch tier is now fully functional from a scenario file.**
+- [ ] Next: the remaining subsystems — the conservation monitor (§8),
+      analytic solutions (§9), Poinsot and frames (§10, §11), then the
+      render/ui interactive tier (`scene_description`, `palettes`,
+      `vedo_renderer`, `controls`, `time_control`) and the rbsim/rbbatch
+      entry scripts (XYZ idiom).
 
 ---
 
