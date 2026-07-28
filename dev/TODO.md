@@ -471,13 +471,34 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       loop (the guard swallows no real curves); and the predicate itself.
       Verified the original repro (build_scene with omega=[3,0,0]) no longer
       crashes. 270 total.
-- [ ] Next (vedo-bound glue): the vedo widget bindings for ui/controls (a
-      ControlsSource reading a live vedo window into a Controls snapshot,
-      with pace_after_frame re-pausing single-step), and `scripts/rbsim.py`
-      + rbsimrc.py (the interactive XYZ entry point wiring VedoRenderer +
-      the live ControlsSource + run_interactive_session). Deferred renderer
-      refinements: herpolhode swept trail + band (now feasible with the
-      driver feeding frames), tighter per-panel camera framing.
+- [x] `ui/vedo_controls.py` + `scripts/rbsim.py` + `scripts/rbsimrc.py` —
+      the interactive entry point. vedo_controls: KeyboardControlState (pure,
+      graphics-free time-control state machine: space toggles pause, s
+      single-steps then re-pauses via pace_after_frame, -/+ slow/fast, n
+      normal, q quits), VedoControlsSource (binds it to a live plotter via a
+      KeyPress callback + a non-blocking event pump; imports no vedo, only
+      the plotter it is handed), and AutoControlsSource (input-free fixed
+      frame count for offscreen/headless). rbsim: ScriptSettings in the XYZ
+      idiom (rc window size + default layout/palette, precedence rc <
+      scenario < CLI), and the testable run_interactive_job that loads a
+      scenario, builds a VedoRenderer + a controls source (live, or Auto for
+      --offscreen/--frames), and runs run_interactive_session; resolve_palette
+      falls back to light for an unknown name. 14 tests: the full keyboard
+      vocabulary; the auto source's frame bound; run_interactive_job renders
+      the requested frames and advances, is deterministic, leaves an injected
+      renderer open; palette fallback; and a guarded real-offscreen run.
+      Verified end to end: `rbsim spin.toml --offscreen --frames N` renders
+      the two-frame view (drift ~1e-14). 284 total. **The interactive tier
+      is now runnable from the command line.**
+- [ ] Deferred interactive refinements (functional but rough, observed in an
+      rbsim frame-30 screenshot): per-panel camera framing -- the camera
+      resets only on the first frame, so as the body tumbles and the omega/L
+      arrows move, the body panel zooms/clips; needs a per-panel reframe that
+      still respects the viewer's own camera moves (§11.6). Also the
+      herpolhode swept trail + bounding band (now feasible with the driver
+      feeding frames), true Platonic body meshes, live scenario editing
+      through the UI (currently pending_edit stays None -- time controls
+      only), and window-X close detection (v1 quits on 'q'/Escape).
 
 ---
 
