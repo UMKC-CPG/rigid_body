@@ -400,10 +400,27 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       uses the scenario stem; and two runs are byte-for-byte identical
       (determinism end to end). 242 total. **The batch tier is now runnable
       from the command line.**
+- [x] `sinks/live_sink.py` (ARCH §3.7, §5.2) — the interactive tier's end
+      of the sink boundary: a read-only Sink that transports the engine's
+      state stream to the renderer layer. Captures the latest (state, time)
+      for the frame loop to draw once per frame, and fires an optional
+      per-state hook (on_state) and close hook (on_close). Decoupled from
+      vedo (plain callables, so a fake renderer drives it in tests) and
+      holds the latest state by reference, not copy, since the engine never
+      mutates a produced state. 8 integration tests: it is a Sink and starts
+      empty; receive captures the latest and counts; the on_state/on_close
+      hooks fire the right number of times; hooks are optional; receive does
+      not mutate the state; and through the engine it sees every substep,
+      its latest equals the final state, and attaching it leaves the
+      trajectory byte-for-byte unchanged. 250 total.
+      NOTE (design chain): live_sink is specified only at the ARCHITECTURE
+      level; §1.2 renders inline from the loop's own state. Built here as a
+      transport adapter -- the shape the constraints leave to code -- with
+      its exact frame-loop/vedo_renderer interplay settled when those land.
 - [ ] Next (all genuinely vedo-bound): `render/vedo_renderer.py` (the
-      first vedo/pixels module), `sinks/live_sink.py`, the §1.2 interactive
-      driver with the vedo widget bindings for ui/controls, and the
-      `scripts/rbsim.py` interactive entry point (XYZ idiom).
+      first vedo/pixels module), the §1.2 interactive driver with the vedo
+      widget bindings for ui/controls, and the `scripts/rbsim.py`
+      interactive entry point (XYZ idiom).
 
 ---
 
