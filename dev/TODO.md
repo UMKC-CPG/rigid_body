@@ -351,10 +351,29 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       snapshot), and time_control's replay_state_at (§15.5), which needs
       the still-unbuilt `dynamics/trajectory.py` (§13.4/§13.5 ring buffer +
       keyframes).
+- [x] `dynamics/trajectory.py` (PSEUDOCODE §13.4, §13.5) — retention as a
+      bounded, read-only cache over the recomputable Markovian motion.
+      RetainedSample (state + time + optional monitor_accumulators, the one
+      path-dependent exception); Trajectory, the ring buffer (append copies
+      the state in and overwrites the oldest when full; read/newest/oldest
+      by cursor; time_span/contains_time for the replay scrubber;
+      from_retention); and KeyframeStore, sparse exact keyframes plus
+      re-integration from the nearest earlier one via advance_one_substep.
+      16 unit tests: appends read back in order and the full buffer
+      overwrites the oldest; a stored state is isolated from the live state
+      (mutating the source can't reach it); out-of-window reads raise;
+      time_span/containment and the empty case; and the sharp one --
+      keyframe re-integration reproduces the reference trajectory
+      BIT-FOR-BIT for both torque-free and gravity runs (the Markov
+      property), keeps only stride multiples, rounds read_at_time onto the
+      substep grid, and does not disturb the stored keyframe. 228 total.
+      This closes §13; the deferred time_control.replay_state_at (§15.5) can
+      now compose Trajectory.read (in-window) with KeyframeStore.read_at_time
+      (deep past).
 - [ ] Next: `render/vedo_renderer.py` (the first vedo/pixels module),
-      `sinks/live_sink.py`, `dynamics/trajectory.py` (§13 ring buffer), the
-      §1.2 interactive driver, and the rbsim/rbbatch entry scripts (XYZ
-      idiom).
+      `sinks/live_sink.py`, time_control's replay_state_at (§15.5, now
+      unblocked), the §1.2 interactive driver, and the rbsim/rbbatch entry
+      scripts (XYZ idiom).
 
 ---
 
