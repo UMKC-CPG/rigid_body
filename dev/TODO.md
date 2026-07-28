@@ -242,8 +242,24 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       monitor never mutates the state nor changes the trajectory; the
       identity reads zero even on a wrong trajectory; the trend slope is
       positive for a growing residual and zero for a bounded one. 129 total.
-- [ ] Next: Poinsot and frames (§10, §11), then the render/ui interactive
-      tier (`scene_description`, `palettes`, `vedo_renderer`, `controls`,
+- [x] `geometry/poinsot.py` (PSEUDOCODE §10) — the Poinsot construction as
+      pure geometry (no drawing): momental_ellipsoid (semi-axes 1/sqrt(I)),
+      poinsot_contact_point (rho = omega/sqrt(2T)), invariable_plane (normal
+      along L, distance sqrt(2T)/|L|), polhode by class (a point for the
+      spherical top, an analytic circle for the symmetric top, the certified
+      Jacobi-elliptic curve for the asymmetric top via an omega_2 = 0 anchor
+      reconstructed from the state's own invariants), a numerical
+      intersect_quadrics fallback (sweep the middle-axis amplitude, solve the
+      2x2 for the outer squared components, tile four sign octants into the
+      closed loop), and the herpolhode point and band radii. 16 unit tests:
+      every polhode point sits on BOTH invariant quadrics to ~1e-15 in all
+      three classes; the analytic and numerical routes trace the same curve;
+      an RK4 torque-free trajectory keeps omega on the analytic polhode; the
+      invariable plane holds still through a run; the herpolhode lies in it;
+      and the band is a circle for a symmetric top, an annulus for an
+      asymmetric one. 145 total.
+- [ ] Next: reference frames (§11), then the render/ui interactive tier
+      (`scene_description`, `palettes`, `vedo_renderer`, `controls`,
       `time_control`) and the rbsim/rbbatch entry scripts (XYZ idiom).
 
 ---
