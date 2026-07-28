@@ -310,10 +310,24 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       each shared vector's native frame to call to_view (§11.2). DESIGN
       §13.2's prose "Frame" column stays accurate (it names the panel) and
       needed no change.
-- [ ] Next: `render/palettes.py` (§14.3, role->encoding), then
-      `render/vedo_renderer.py`, `ui/controls.py`, `ui/time_control.py`,
-      `sinks/live_sink.py`, the §1.2 interactive driver, and the
-      rbsim/rbbatch entry scripts (XYZ idiom).
+- [x] `render/palettes.py` (PSEUDOCODE §14.3, §14.4) — the selectable
+      role->encoding table: an Encoding record (color, line_style,
+      line_weight, opacity, marker), a Palette record, three built-in
+      schemes (light, dark, color_blind_safe using Okabe-Ito hues), and
+      select_palette/resolve_encoding/frame_family_of. Redundancy is
+      structural: only color changes between schemes while the shape
+      channels (line style, marker, weight, opacity) are palette-independent
+      per role, and each frame owns one consistent hue (§14.4). 19 unit
+      tests: palettes cover exactly the roles build_scene emits; no two
+      roles share an identical encoding; any two same-color roles differ in
+      a non-color channel; the called-out pairs (polhode/herpolhode dash,
+      omega/L arrowhead) differ by a shape channel in every scheme; each
+      frame owns one hue; select/resolve reject unknowns loudly; and
+      switching palettes preserves every shape channel. 195 total.
+- [ ] Next: `render/vedo_renderer.py` (the first vedo/pixels module),
+      `ui/controls.py`, `ui/time_control.py`, `sinks/live_sink.py`, the
+      §1.2 interactive driver, and the rbsim/rbbatch entry scripts (XYZ
+      idiom).
 
 ---
 
