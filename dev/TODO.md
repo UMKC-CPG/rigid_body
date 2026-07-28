@@ -324,8 +324,35 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       omega/L arrowhead) differ by a shape channel in every scheme; each
       frame owns one hue; select/resolve reject unknowns loudly; and
       switching palettes preserves every shape channel. 195 total.
+- [x] `dynamics/time_control.py` (PSEUDOCODE §15.3) — the pure pacing core
+      of the time controls (note: ARCH §3.3 puts time_control in dynamics/,
+      not ui/): the ControlMode/Pace enums, the Controls plain-data snapshot,
+      SLOW_FACTOR/FAST_FACTOR, substeps_this_frame (the map onto a substep
+      COUNT, never dt), pace_after_frame (single-step re-pauses), and
+      default_controls. 10 unit tests: each pace maps to the right count;
+      slow motion never stalls below one step; the pace order is
+      monotonic; single-step re-pauses; the Controls record carries no
+      dt/time_step, so pacing structurally cannot change the step size
+      (determinism at the type level); default_controls starts LIVE at the
+      scenario's nominal rate.
+- [x] `ui/controls.py` (PSEUDOCODE §15.4, §15.6) — the headless
+      scenario-editing surface: apply_scenario_edit (an edit is a NEW
+      scenario via dataclasses.replace, never a mutation), replace_section
+      (the nested-knob convenience), and scale_setting_labels (honest
+      Principle-12 labels for every exaggeration factor != 1). 7 unit tests:
+      an edit returns a fresh scenario and leaves the original intact; an
+      empty edit is a no-op; a physics-field edit is a genuinely different
+      run; a presentation-only edit leaves every physics field the same
+      object (the §15.1 split); replace_section edits a nested knob without
+      mutation and flows into the pacing; and the scaling labels name every
+      exaggeration while skipping a factor of one. 212 total.
+- [ ] Deferred with the vedo tier: `ui/controls.py`'s actual vedo widget
+      bindings (read_controls reading a live window into a Controls
+      snapshot), and time_control's replay_state_at (§15.5), which needs
+      the still-unbuilt `dynamics/trajectory.py` (§13.4/§13.5 ring buffer +
+      keyframes).
 - [ ] Next: `render/vedo_renderer.py` (the first vedo/pixels module),
-      `ui/controls.py`, `ui/time_control.py`, `sinks/live_sink.py`, the
+      `sinks/live_sink.py`, `dynamics/trajectory.py` (§13 ring buffer), the
       §1.2 interactive driver, and the rbsim/rbbatch entry scripts (XYZ
       idiom).
 
