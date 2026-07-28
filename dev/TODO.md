@@ -457,17 +457,20 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       finalized at session end. Also added DESIGN §13.7 pinning the live
       render path (frame loop renders inline once per frame; live_sink is a
       per-substep tap; both read-only). 264 total.
-- [ ] BUG (poinsot/§10, pre-existing, surfaced by the driver test): a state
-      spinning (near) exactly about a principal axis makes the polhode
-      degenerate to a point, but poinsot.polhode's asymmetric elliptic
-      branch calls free_asymmetric_top_parameters which hits math.sqrt of a
-      tiny-negative and raises ValueError("math domain error"). Repro: box
-      edges [0.10,0.15,0.30], omega=[3,0,0] (pure spin about a principal
-      axis) -> build_scene -> polhode crashes. Fix: in poinsot.polhode
-      detect a near-pure-principal-axis spin (two omega components ~0, i.e.
-      L^2 ~ 2T*I_k) and return a single-point polhode (steady rotation, §9.2)
-      instead of the elliptic reconstruction; and/or clamp the boundary
-      sqrt. A real student input (spin a body about a principal axis).
+- [x] BUG FIXED (poinsot/§10, was pre-existing): a state spinning (near)
+      exactly about a principal axis made the asymmetric polhode's elliptic
+      reconstruction take math.sqrt of a rounding-sized negative at the
+      branch boundary -> ValueError("math domain error"). poinsot.polhode
+      now detects a principal-axis spin (_is_principal_axis_spin: at rest,
+      or only one appreciable omega component, rel. tol 1e-6) in the
+      asymmetric branch and returns a single-point polhode (steady rotation,
+      §9.2) -- covering all three axes, including the intermediate one whose
+      separatrix would otherwise give an infinite period. 6 tests: a spin
+      about each principal axis is a point on both quadrics; a near-axis
+      spin is a point; an appreciably off-axis spin stays a proper elliptic
+      loop (the guard swallows no real curves); and the predicate itself.
+      Verified the original repro (build_scene with omega=[3,0,0]) no longer
+      crashes. 270 total.
 - [ ] Next (vedo-bound glue): the vedo widget bindings for ui/controls (a
       ControlsSource reading a live vedo window into a Controls snapshot,
       with pace_after_frame re-pausing single-step), and `scripts/rbsim.py`

@@ -222,6 +222,66 @@ def test_asymmetric_polhode_is_a_closed_loop():
 
 
 # --------------------------------------------------------------------
+# Degenerate case: spin about a principal axis is a point, not a crash
+# --------------------------------------------------------------------
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+def test_asymmetric_spin_about_a_principal_axis_is_a_point(axis):
+    # A steady rotation about any principal axis of an asymmetric top has a
+    # single-point polhode (Section 9.2); the elliptic reconstruction would
+    # take a square root of a rounding-sized negative at that boundary, so
+    # the code must recognize the point. This includes the intermediate
+    # axis, whose separatrix would otherwise give an infinite period.
+    body = make_body(ASYMMETRIC_BOX)
+    angular_velocity = np.zeros(3)
+    angular_velocity[axis] = 3.0
+    curve = po.polhode(
+        body, st.State(IDENTITY_QUATERNION, angular_velocity),
+        sample_count=240)
+    assert curve.kind == "point"
+    assert curve.points.shape == (1, 3)
+    np.testing.assert_array_equal(curve.points[0], angular_velocity)
+    # The point sits on both invariant quadrics (trivially, being omega).
+    energy_drift, momentum_drift = quadric_residuals(curve.points, body)
+    assert energy_drift < 1e-12
+    assert momentum_drift < 1e-12
+
+
+def test_near_principal_axis_spin_is_treated_as_a_point():
+    # A spin only negligibly off a principal axis is a point too, well
+    # inside the tolerance that separates it from a visible loop.
+    body = make_body(ASYMMETRIC_BOX)
+    angular_velocity = np.array([3.0, 3.0e-7, 1.0e-7])
+    curve = po.polhode(
+        body, st.State(IDENTITY_QUATERNION, angular_velocity),
+        sample_count=240)
+    assert curve.kind == "point"
+
+
+def test_appreciably_off_axis_spin_stays_an_elliptic_loop():
+    # A spin clearly off the principal axis is a real polhode loop, not a
+    # point: the degeneracy guard must not swallow genuine curves.
+    body = make_body(ASYMMETRIC_BOX)
+    angular_velocity = np.array([3.0, 0.3, 0.1])
+    curve = po.polhode(
+        body, st.State(IDENTITY_QUATERNION, angular_velocity),
+        sample_count=240)
+    assert curve.kind == "elliptic"
+    assert curve.points.shape[0] == 240
+    energy_drift, momentum_drift = quadric_residuals(curve.points, body)
+    assert energy_drift < 1e-9
+    assert momentum_drift < 1e-9
+
+
+def test_principal_axis_spin_predicate():
+    assert po._is_principal_axis_spin(np.array([0.0, 0.0, 0.0]))
+    assert po._is_principal_axis_spin(np.array([5.0, 0.0, 0.0]))
+    assert po._is_principal_axis_spin(np.array([0.0, -2.0, 0.0]))
+    assert not po._is_principal_axis_spin(np.array([3.0, 0.3, 0.1]))
+    assert not po._is_principal_axis_spin(np.array([1.0, 1.0, 1.0]))
+
+
+# --------------------------------------------------------------------
 # The numerical fallback agrees with the certified analytic form
 # --------------------------------------------------------------------
 

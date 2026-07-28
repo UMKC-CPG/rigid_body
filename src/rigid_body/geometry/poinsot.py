@@ -179,9 +179,47 @@ def polhode(body, state, sample_count=240):
             points=_symmetric_polhode_circle(body, state, sample_count),
             kind="circle")
 
+    # An asymmetric top spinning along a principal axis is a steady
+    # rotation whose polhode is the single fixed point where omega sits
+    # (§9.2) -- a degenerate case of the elliptic curve, at the branch
+    # boundary where the elliptic amplitudes vanish and the solver would
+    # take the square root of a rounding-sized negative. Handle it as the
+    # point it is, for every principal axis (including the intermediate
+    # one, whose separatrix would otherwise give an infinite period).
+    angular_velocity = np.asarray(
+        state.angular_velocity_body, dtype=float)
+    if _is_principal_axis_spin(angular_velocity):
+        return Polhode(points=angular_velocity.reshape(1, 3), kind="point")
+
     return Polhode(
         points=_asymmetric_polhode_elliptic(body, state, sample_count),
         kind="elliptic")
+
+
+# The angular velocity counts as a steady principal-axis spin when its
+# second-largest body component is negligible against its largest, i.e. it
+# points essentially along one principal axis. The threshold sits far above
+# the rounding that trips the elliptic solver, yet far below any spin whose
+# polhode is a visible loop.
+AXIS_ALIGNMENT_RELATIVE_TOLERANCE = 1.0e-6
+
+
+def _is_principal_axis_spin(angular_velocity,
+                            relative_tolerance=(
+                                AXIS_ALIGNMENT_RELATIVE_TOLERANCE)):
+    """Return whether ``omega`` points (essentially) along a principal axis.
+
+    True when the body is at rest or when only one body-frame component of
+    the angular velocity is appreciable -- a steady rotation about a
+    principal axis, whose polhode is a single point.
+    """
+    magnitude = float(np.linalg.norm(angular_velocity))
+    if magnitude == 0.0:
+        return True
+    ascending_components = np.sort(np.abs(angular_velocity))
+    second_largest = ascending_components[1]
+    largest = ascending_components[2]
+    return second_largest <= relative_tolerance * largest
 
 
 def _symmetric_polhode_circle(body, state, sample_count):
