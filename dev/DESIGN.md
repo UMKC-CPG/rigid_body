@@ -2384,6 +2384,34 @@ the interactive tier can wrap it in a scene description and the batch tier
 can serialize it untouched, from the one set of numbers the physics
 produced.
 
+### 13.7 The live render path: frame loop, sink, and renderer
+
+One interplay is worth pinning, because two things could look like the same
+thing and are not. In the interactive frame loop (ARCHITECTURE §6.1,
+PSEUDOCODE §1.2) a rendered frame and an emitted state arrive on different
+cadences. The loop advances the physics by however many *substeps* the time
+controls chose (§14, ARCHITECTURE §6.3), then builds one scene description
+from the resulting state and hands it to `vedo_renderer.py` — so the
+**renderer draws once per frame**, at the frame's endpoint state, and never
+per substep. That inline path (build the scene, draw it) is how the picture
+reaches the screen.
+
+The sink boundary (§5.2) is a *separate* consumer on a *finer* cadence.
+Every substep the loop also emits its state to whatever sinks are attached,
+and `live_sink.py` is the interactive tier's sink: it receives **every
+substep**, holds the most recent one, and forwards it to any streaming or
+recording consumer. The two are reconciled by a single fact — the live
+sink's latest state is exactly the frame's endpoint, the same state the
+renderer just drew — so a recorded or streamed session and the on-screen
+frame never disagree, while a recording sink (`hdf5_sink.py`) still captures
+the intermediate substeps the display skips. Both the renderer and every
+sink are strictly read-only with respect to the state (§7.5, §12.2): the
+render and the emit are downstream of the physics, so turning the display,
+the recording, or replay on or off changes nothing the next step computes
+(ARCHITECTURE §6.4). This is why `live_sink` is a *tap* on the state stream,
+not the render path itself: the renderer is driven by the loop, the sink
+merely observes.
+
 ---
 
 ## 14. Interaction and Controls

@@ -439,12 +439,42 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       trail + bounding band (needs renderer-held frame history), tighter
       per-panel camera framing, and Platonic body meshes (currently a sphere
       proxy -- the physics is spherical anyway).
-- [ ] Next (vedo-bound glue): the §1.2 interactive driver
-      (run_interactive_session) tying engine + live_sink + renderer +
-      monitor + controls, the vedo widget bindings for ui/controls
-      (read_controls from a live window), and `scripts/rbsim.py` + rbsimrc.py
-      (the interactive XYZ entry point). Optional: a short DESIGN paragraph
-      pinning the live_sink / frame-loop / renderer interplay.
+- [x] `ui/interactive_session.py` (PSEUDOCODE §1.2) — the interactive
+      driver: run_interactive runs one scenario's frame loop (read controls;
+      return a pending edit, or replay stored history, or advance the live
+      physics by substeps_this_frame, then build the scene and draw once per
+      frame), and run_interactive_session applies each edit and runs the
+      next scenario, finalizing sinks at session end. Renderer- and
+      controls-agnostic: imports only the headless scene_description, takes
+      the renderer and a ControlsSource as objects, so the whole loop is
+      tested with fakes -- no vedo, no display. 9 integration tests: it
+      advances and renders each frame; pause holds the motion but still
+      redraws; single-step takes one substep; the same script gives the same
+      rendered states (determinism); a pending edit stops the run and is
+      returned; the session applies a physics edit into a genuinely
+      different run; replay redraws a stored past state; a live sink taps
+      every substep and its latest matches the drawn frame; and sinks are
+      finalized at session end. Also added DESIGN §13.7 pinning the live
+      render path (frame loop renders inline once per frame; live_sink is a
+      per-substep tap; both read-only). 264 total.
+- [ ] BUG (poinsot/§10, pre-existing, surfaced by the driver test): a state
+      spinning (near) exactly about a principal axis makes the polhode
+      degenerate to a point, but poinsot.polhode's asymmetric elliptic
+      branch calls free_asymmetric_top_parameters which hits math.sqrt of a
+      tiny-negative and raises ValueError("math domain error"). Repro: box
+      edges [0.10,0.15,0.30], omega=[3,0,0] (pure spin about a principal
+      axis) -> build_scene -> polhode crashes. Fix: in poinsot.polhode
+      detect a near-pure-principal-axis spin (two omega components ~0, i.e.
+      L^2 ~ 2T*I_k) and return a single-point polhode (steady rotation, §9.2)
+      instead of the elliptic reconstruction; and/or clamp the boundary
+      sqrt. A real student input (spin a body about a principal axis).
+- [ ] Next (vedo-bound glue): the vedo widget bindings for ui/controls (a
+      ControlsSource reading a live vedo window into a Controls snapshot,
+      with pace_after_frame re-pausing single-step), and `scripts/rbsim.py`
+      + rbsimrc.py (the interactive XYZ entry point wiring VedoRenderer +
+      the live ControlsSource + run_interactive_session). Deferred renderer
+      refinements: herpolhode swept trail + band (now feasible with the
+      driver feeding frames), tighter per-panel camera framing.
 
 ---
 
