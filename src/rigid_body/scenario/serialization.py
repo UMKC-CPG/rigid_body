@@ -203,14 +203,28 @@ def build_torque_models(scenario):
     return models
 
 
-def run_batch_from_scenario(scenario, sinks, monitor=None):
-    """Run the batch tier from a scenario (PSEUDOCODE Section 1.3)."""
-    state = resolve_initial_state(scenario)
+def build_run_components(scenario):
+    """Resolve a scenario into the pieces a run is assembled from.
+
+    Returns ``(initial_state, body, torque_models, integrator)`` -- the
+    same resolved pieces :func:`run_batch_from_scenario` runs with. Exposed
+    so a caller can build something alongside the run from the identical
+    inputs, such as a conservation monitor over the run's own body and
+    torques (the batch entry script does this).
+    """
+    initial_state = resolve_initial_state(scenario)
     body = _rigid_body_from_resolved(scenario.body)
     torque_models = build_torque_models(scenario)
     integrator = select_integrator(scenario.fidelity.integrator)
+    return initial_state, body, torque_models, integrator
+
+
+def run_batch_from_scenario(scenario, sinks, monitor=None):
+    """Run the batch tier from a scenario (PSEUDOCODE Section 1.3)."""
+    initial_state, body, torque_models, integrator = (
+        build_run_components(scenario))
     return run_batch(
-        state, body, torque_models, integrator,
+        initial_state, body, torque_models, integrator,
         scenario.fidelity.time_step, scenario.fidelity.integration_span,
         sinks, monitor=monitor)
 
@@ -384,3 +398,14 @@ def save_scenario(scenario, path):
     document = _document_from_scenario(scenario)
     with open(path, "wb") as scenario_file:
         tomli_w.dump(document, scenario_file)
+
+
+def scenario_to_toml(scenario):
+    """Return the scenario serialized to a TOML string.
+
+    The same document :func:`save_scenario` writes, rendered to text rather
+    than a file. The batch entry script embeds this string in the HDF5
+    output as provenance, so any result traces back to the exact run that
+    produced it (ARCHITECTURE Section 9.4).
+    """
+    return tomli_w.dumps(_document_from_scenario(scenario))

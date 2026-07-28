@@ -383,11 +383,27 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       (repeat reads agree) across both paths; and read_at_time finds the
       nearest sample / clamps at the ends. This closes the last headless
       §15.5 gap. 235 total.
-- [ ] Next (all vedo-bound or glue): `render/vedo_renderer.py` (the first
-      vedo/pixels module), `sinks/live_sink.py`, the §1.2 interactive
+- [x] `scripts/rbbatch.py` + `scripts/rbbatchrc.py` (ARCH §3.9, §7) — the
+      batch entry point in the XYZ/XYZrc idiom. ScriptSettings pulls
+      machine-dependent defaults from rbbatchrc.py (output dir, XDMF on/off,
+      flush size, monitor on/off -- never physics) and reconciles them with
+      argparse (rc < scenario < CLI); the testable core run_batch_job loads
+      a scenario, attaches an Hdf5Sink carrying the scenario as embedded
+      provenance, optionally runs a ConservationMonitor over the run's own
+      body/torques, advances the deterministic batch loop, and returns a
+      BatchResult. Also added `serialization.scenario_to_toml` (the deferred
+      provenance helper) and `serialization.build_run_components` (the
+      resolved pieces, shared by run_batch_from_scenario and the monitor).
+      7 integration tests: writes the expected 100-sample trajectory; the
+      output embeds reloadable provenance; the torque-free drift report is
+      ~machine zero; XDMF and the monitor each switch off; default_output_path
+      uses the scenario stem; and two runs are byte-for-byte identical
+      (determinism end to end). 242 total. **The batch tier is now runnable
+      from the command line.**
+- [ ] Next (all genuinely vedo-bound): `render/vedo_renderer.py` (the
+      first vedo/pixels module), `sinks/live_sink.py`, the §1.2 interactive
       driver with the vedo widget bindings for ui/controls, and the
-      rbsim/rbbatch entry scripts (XYZ idiom). `rbbatch` stays headless and
-      also wires the deferred scenario_to_toml provenance into hdf5_sink.
+      `scripts/rbsim.py` interactive entry point (XYZ idiom).
 
 ---
 
