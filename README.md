@@ -81,9 +81,7 @@ cd /cluster/pixstor/home/rulisp/CPG/cpg-repo/rigid_body
 
 ### Interactive tier — a live window (`rbsim`)
 
-Open a scenario in a live window and watch it tumble. This needs a
-display (an X, VNC, or OnDemand desktop session — plain SSH X11
-forwarding is not recommended, see `dev/ARCHITECTURE.md` §9.3):
+Open a scenario in a live window and watch it tumble:
 
 ```bash
 python src/scripts/rbsim.py scenarios/dzhanibekov.toml
@@ -93,11 +91,31 @@ Controls: **space** pauses and resumes, **s** single-steps, **-** slows,
 **+** speeds up, **n** returns to normal speed, **q** quits. Rendering is
 in **software**; no GPU is required.
 
-With no display, render a fixed number of frames offscreen (useful for a
-preview or a headless node):
+> **A live window needs a real desktop session on the cluster** — a VNC
+> or Open OnDemand desktop. **Plain SSH X11 forwarding (including MoTTY /
+> PuTTY `-X`) does not work and will crash**: it ships GL commands rather
+> than pixels, and VTK cannot get a valid rendering context, so the
+> window segfaults (`bad X server connection`). See
+> `dev/ARCHITECTURE.md` §9.3. If you only have an SSH terminal, use the
+> headless capture below instead.
+
+### No display? Capture frames headlessly
+
+With no desktop session, render offscreen and save images you can view
+(or turn into a video). Save the final frame:
 
 ```bash
-python src/scripts/rbsim.py scenarios/dzhanibekov.toml --offscreen --frames 60
+python src/scripts/rbsim.py scenarios/dzhanibekov.toml \
+    --screenshot dzhanibekov.png --frames 60
+```
+
+or save every frame as an image sequence and assemble a video with
+ffmpeg:
+
+```bash
+python src/scripts/rbsim.py scenarios/dzhanibekov.toml \
+    --save-frames dz_frames/ --frames 300
+ffmpeg -framerate 30 -i dz_frames/frame_%05d.png dzhanibekov.mp4
 ```
 
 ### Batch tier — high-fidelity output for ParaView (`rbbatch`)

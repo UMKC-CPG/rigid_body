@@ -147,3 +147,22 @@ def test_offscreen_run_completes_with_the_real_renderer(tmp_path):
     except Exception as problem:                  # pragma: no cover
         pytest.skip(f"no offscreen render context: {problem}")
     assert controls.frames_read == 3
+
+
+def test_save_frames_writes_one_png_per_frame(tmp_path):
+    # The headless capture path: a PNG per frame plus a final screenshot,
+    # so a scenario can be seen on a node with no display.
+    scenario_path = str(tmp_path / "spin.toml")
+    write_scenario(scenario_path)
+    frames_dir = str(tmp_path / "frames")
+    final_png = str(tmp_path / "final.png")
+    try:
+        rbsim.run_interactive_job(
+            scenario_path, window_size=(320, 240), frames=4,
+            save_frames=frames_dir, screenshot=final_png)
+    except Exception as problem:                  # pragma: no cover
+        pytest.skip(f"no offscreen render context: {problem}")
+    written = [name for name in os.listdir(frames_dir)
+               if name.endswith(".png")]
+    assert len(written) == 4
+    assert os.path.exists(final_png)

@@ -67,21 +67,66 @@ def resolve_palette(palette_name):
         return LIGHT_PALETTE
 
 
+class _FrameSavingRenderer:
+    """Wrap a renderer to write each drawn frame to a numbered PNG.
+
+    This is how the interactive scene is captured without a live window
+    (the headless path for a node with no display): it draws through the
+    real renderer, then screenshots the frame to ``frame_00000.png`` and so
+    on. The saved sequence can be viewed directly or assembled into a video
+    with ffmpeg (ARCHITECTURE Section 9.1).
+    """
+
+    def __init__(self, inner_renderer, directory):
+        self.inner_renderer = inner_renderer
+        self.directory = directory
+        os.makedirs(directory, exist_ok=True)
+        self.frame_count = 0
+
+    @property
+    def plotter(self):
+        return self.inner_renderer.plotter
+
+    def render(self, scene, state):
+        self.inner_renderer.render(scene, state)
+        path = os.path.join(
+            self.directory, f"frame_{self.frame_count:05d}.png")
+        self.inner_renderer.screenshot(path)
+        self.frame_count += 1
+
+    def screenshot(self, path=None, as_array=False):
+        return self.inner_renderer.screenshot(path, as_array)
+
+    def close(self):
+        self.inner_renderer.close()
+
+
 def run_interactive_job(scenario_path, window_size=(1280, 960),
                         layout="scenario", palette="scenario",
-                        offscreen=False, frames=None, renderer=None,
+                        offscreen=False, frames=None, screenshot=None,
+                        save_frames=None, renderer=None,
                         controls_source=None):
     """Load a scenario, build the renderer and controls, and run the loop.
 
     The testable core of the script. ``layout`` and ``palette`` are either a
     concrete choice or ``"scenario"`` to take the value from the scenario's
-    presentation zone. Without an injected renderer it builds a
-    :class:`VedoRenderer`; without an injected controls source it uses live
-    vedo controls, or an :class:`AutoControlsSource` when running offscreen
-    or for a fixed frame count. Returns the controls source used.
+    presentation zone. ``screenshot`` saves the final frame to a PNG, and
+    ``save_frames`` saves every frame to a directory as an image sequence;
+    either capture implies an offscreen run, since its purpose is to see the
+    motion without a live window (the headless path for a node with no
+    display). Without an injected renderer it builds a :class:`VedoRenderer`;
+    without an injected controls source it uses live vedo controls, or an
+    :class:`AutoControlsSource` when running offscreen or for a fixed frame
+    count. Returns the controls source used.
     """
     scenario = load_scenario(scenario_path)
     presentation = scenario.presentation
+
+    # Capturing to disk is a headless operation, so it forces offscreen
+    # rendering -- a live GL window is neither needed nor wanted for it.
+    capturing = screenshot is not None or save_frames is not None
+    if capturing:
+        offscreen = True
 
     own_renderer = renderer is None
     if renderer is None:
@@ -92,6 +137,8 @@ def run_interactive_job(scenario_path, window_size=(1280, 960),
         renderer = VedoRenderer(
             chosen_palette, layout=chosen_layout, size=window_size,
             offscreen=offscreen)
+    if save_frames is not None:
+        renderer = _FrameSavingRenderer(renderer, save_frames)
 
     if controls_source is None:
         nominal_substeps = scenario.fidelity.substeps_per_frame
@@ -106,6 +153,8 @@ def run_interactive_job(scenario_path, window_size=(1280, 960),
     try:
         run_interactive_session(
             scenario, renderer, controls_source, max_frames=frames)
+        if screenshot is not None:
+            renderer.screenshot(screenshot)
     finally:
         if own_renderer:
             renderer.close()
@@ -143,6 +192,8 @@ class ScriptSettings:
         self.scenario_path = None
         self.offscreen = False
         self.frames = None
+        self.screenshot = None
+        self.save_frames = None
 
     def parse_command_line(self):
         """Build the parser and return the parsed arguments."""
@@ -192,6 +243,15 @@ file; the rc file governs only the window and the default presentation.
             "--offscreen", dest="offscreen", action="store_true",
             help="Render without a window (for a preview or a headless "
                  "node); implies an automatic fixed-length run.")
+        parser.add_argument(
+            "--screenshot", dest="screenshot", default=None,
+            help="Save the final frame to this PNG path (implies "
+                 "offscreen). A quick way to see a scenario with no "
+                 "display.")
+        parser.add_argument(
+            "--save-frames", dest="save_frames", default=None,
+            help="Save every frame as a numbered PNG in this directory "
+                 "(implies offscreen); assemble into a video with ffmpeg.")
 
     def reconcile(self, arguments):
         """Let the command line override the rc defaults."""
@@ -202,6 +262,8 @@ file; the rc file governs only the window and the default presentation.
         self.palette = arguments.palette
         self.frames = arguments.frames
         self.offscreen = arguments.offscreen
+        self.screenshot = arguments.screenshot
+        self.save_frames = arguments.save_frames
 
     def record_command_line(self):
         """Append the invocation to a ``command`` log, as the idiom does."""
@@ -221,7 +283,12 @@ def main():
         settings.scenario_path,
         window_size=(settings.window_width, settings.window_height),
         layout=settings.layout, palette=settings.palette,
-        offscreen=settings.offscreen, frames=settings.frames)
+        offscreen=settings.offscreen, frames=settings.frames,
+        screenshot=settings.screenshot, save_frames=settings.save_frames)
+    if settings.screenshot is not None:
+        print(f"Saved final frame to {settings.screenshot}")
+    if settings.save_frames is not None:
+        print(f"Saved frame sequence to {settings.save_frames}/")
 
 
 if __name__ == "__main__":
