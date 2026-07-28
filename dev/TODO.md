@@ -230,10 +230,21 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       sign in the DESIGN §8.3 / PSEUDOCODE §9.3 prose (the formula was
       right); corrected at all three levels — prolate negative, oblate and
       the Earth positive, so the Chandler wobble is prograde.
-- [ ] Next: the conservation monitor (§8), Poinsot and frames (§10, §11),
-      then the render/ui interactive tier (`scene_description`, `palettes`,
-      `vedo_renderer`, `controls`, `time_control`) and the rbsim/rbbatch
-      entry scripts (XYZ idiom).
+- [x] `analysis/conservation_monitor.py` (PSEUDOCODE §8) — the
+      ConservationMonitor watching kinetic_energy and angular_momentum_space
+      for drift by BALANCE, not constancy: a trapezoid accumulator over the
+      §5.5 rate laws, fixed-scale/per-unit-time reporting, the
+      magnitude/direction split on L, an online least-squares TrendTracker
+      for secular growth, and poinsot_identity_residual as a test oracle
+      only. 10 unit tests: exact analytic motion reports machine-zero drift;
+      under damping the balance residual is < 1e-3 x the naive constancy
+      drift; under gravity the momentum balance holds while L swings; the
+      monitor never mutates the state nor changes the trajectory; the
+      identity reads zero even on a wrong trajectory; the trend slope is
+      positive for a growing residual and zero for a bounded one. 129 total.
+- [ ] Next: Poinsot and frames (§10, §11), then the render/ui interactive
+      tier (`scene_description`, `palettes`, `vedo_renderer`, `controls`,
+      `time_control`) and the rbsim/rbbatch entry scripts (XYZ idiom).
 
 ---
 
