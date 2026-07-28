@@ -301,10 +301,15 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       coordinate_frame so the renderer can re-express them per panel; every
       drawable carries a non-empty label (Principle 5) and meaningful
       distinctions are redundant in role/label, not color alone (§14.3). 13
-      unit tests. 176 total. NOTE: added a `coordinate_frame` field beyond
-      the PSEUDOCODE §14.2 Drawable sketch -- the renderer needs each
-      shared vector's native frame to call to_view (§11.2); a small,
-      documented code-level refinement worth reflecting back into §14.2.
+      unit tests. 176 total.
+- [x] PSEUDOCODE §14.2 sync: the Drawable record now names the panel field
+      `panel` and adds a `coordinate_frame` field (BODY | SPACE | NONE),
+      with a prose note on the panel-vs-coordinate-frame distinction and
+      the build_scene/§14.6 calls updated. This closes the code-level
+      refinement the scene_description commit surfaced -- the renderer needs
+      each shared vector's native frame to call to_view (§11.2). DESIGN
+      §13.2's prose "Frame" column stays accurate (it names the panel) and
+      needed no change.
 - [ ] Next: `render/palettes.py` (§14.3, role->encoding), then
       `render/vedo_renderer.py`, `ui/controls.py`, `ui/time_control.py`,
       `sinks/live_sink.py`, the §1.2 interactive driver, and the

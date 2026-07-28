@@ -2462,12 +2462,25 @@ role, a frame, and a label that travels *with* it.
 
 ```
 record Drawable:
-    geometry     # points/mesh/vector, in physical coordinates
-    role         # what it IS -- the palette key (§14.3)
-    frame        # BODY | SPACE | BOTH | NEITHER -- panel and anchor (§11)
-    label        # text carried with the drawable, not added by renderer
-    scale_note   # optional on-screen note for a scaled quantity (§14.5)
+    geometry          # points/mesh/vector, in physical coordinates
+    role              # what it IS -- the palette key (§14.3)
+    panel             # BODY | SPACE | BOTH | NEITHER -- which panel(s)
+    coordinate_frame  # BODY | SPACE | NONE -- the frame `geometry` is in
+    label             # text carried with the drawable, not the renderer's
+    scale_note        # optional on-screen note for a scaled item (§14.5)
 ```
+
+Two of these fields look alike and are not. `panel` says *where a drawable
+is shown* — it may be BOTH panels, or NEITHER (the overlay) — while
+`coordinate_frame` says *what coordinates its geometry is expressed in*,
+always a single BODY or SPACE (or NONE for the frame-free overlay). The
+renderer needs the second to carry a shared vector into a panel: `omega` is
+stored in body components and `L` in space components, so drawing either in
+the *other* panel means calling `to_view` (§11.2), which cannot be done
+unless the drawable records which frame its numbers already speak. The
+distinction is the §11 lesson made structural — the panel is a choice of
+what to hold still; the coordinate frame is what the numbers currently
+mean.
 
 `build_scene` assembles the inventory each frame from the computed
 quantities. It is the `build_scene` the loop calls (§1.2); it is torque
@@ -2480,38 +2493,49 @@ function build_scene(state, body, monitor):
 
     # The body, or its ellipsoid proxy if it has no geometry (§4, §10.2).
     if body.geometry is not none:
-        append(drawables, Drawable(body.geometry, "body_mesh", BODY,
-                                   "rigid body"))
+        append(drawables, Drawable(body.geometry, "body_mesh",
+                                   panel = BODY, coordinate_frame = BODY,
+                                   label = "rigid body"))
     ellipsoid <- momental_ellipsoid(body)                    # 10.2
-    append(drawables, Drawable(ellipsoid, "momental_ellipsoid", BODY,
-                               "momental ellipsoid",
+    append(drawables, Drawable(ellipsoid, "momental_ellipsoid",
+                               panel = BODY, coordinate_frame = BODY,
+                               label = "momental ellipsoid",
                                scale_note = ellipsoid_scale_label()))
 
     # The Poinsot construction -- torque-free only (§10).
     if monitor.torque_models is empty:
         append(drawables, Drawable(polhode(body, state, SAMPLES),
-                                   "polhode", BODY, "polhode: omega in body"))
+                                   "polhode", panel = BODY,
+                                   coordinate_frame = BODY,
+                                   label = "polhode: omega in body"))
         append(drawables, Drawable(invariable_plane(state, body),
-                                   "invariable_plane", SPACE,
-                                   "invariable plane"))
+                                   "invariable_plane", panel = SPACE,
+                                   coordinate_frame = SPACE,
+                                   label = "invariable plane"))
         append(drawables, Drawable(herpolhode_geometry(state, body),
-                                   "herpolhode", SPACE,
-                                   "herpolhode: omega in space"))
+                                   "herpolhode", panel = SPACE,
+                                   coordinate_frame = SPACE,
+                                   label = "herpolhode: omega in space"))
 
     # The two shared arrows, drawn in BOTH panels (§11.4); to_view (§11.2)
-    # re-expresses each in its panel's frame at draw time.
+    # re-expresses each into a panel at draw time, reading the arrow's own
+    # coordinate_frame -- BODY for omega, SPACE for L -- to know the source.
     append(drawables, Drawable(state.angular_velocity_body,
-                               "angular_velocity", BOTH, "omega"))
+                               "angular_velocity", panel = BOTH,
+                               coordinate_frame = BODY, label = "omega"))
     append(drawables, Drawable(angular_momentum_space(state, body),
-                               "angular_momentum", BOTH, "L"))
+                               "angular_momentum", panel = BOTH,
+                               coordinate_frame = SPACE, label = "L"))
 
     # The two labeled triads (§1.1 names).
-    append(drawables, Drawable(body.principal_axes, "body_triad", BODY,
-                               "body axes 1, 2, 3"))
-    append(drawables, Drawable(LABORATORY_AXES, "lab_triad", SPACE,
-                               "space axes X, Y, Z"))
+    append(drawables, Drawable(body.principal_axes, "body_triad",
+                               panel = BODY, coordinate_frame = BODY,
+                               label = "body axes 1, 2, 3"))
+    append(drawables, Drawable(LABORATORY_AXES, "lab_triad",
+                               panel = SPACE, coordinate_frame = SPACE,
+                               label = "space axes X, Y, Z"))
 
-    # The telemetry overlay belongs to NEITHER frame (§14.6).
+    # The telemetry overlay belongs to NEITHER panel, no frame (§14.6).
     append(drawables, telemetry_overlay(monitor, state, body))
 
     return { drawables = drawables }
@@ -2613,7 +2637,9 @@ function telemetry_overlay(monitor, state, body):
     # The time ratio reads the wall clock for DISPLAY only; it never feeds
     # the physics, whose pacing is by substep count (§1.4), so showing it
     # does not disturb determinism.
-    return Drawable(readout, "telemetry", NEITHER, "conservation monitor")
+    return Drawable(readout, "telemetry", panel = NEITHER,
+                    coordinate_frame = NONE,
+                    label = "conservation monitor")
 ```
 
 A closing note returns to the boundary the document started from. The batch
