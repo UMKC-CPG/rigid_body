@@ -13,9 +13,16 @@ merely animated.
 
 ## Status
 
-**Early design.** The VISION and ARCHITECTURE documents are complete;
-DESIGN, PSEUDOCODE, and the implementation are not yet written. There
-is no runnable program in this repository yet.
+**Runnable.** The full five-level document chain is written and the
+implementation is complete: both the interactive tier (a live vedo
+window) and the batch tier (HDF5 output for ParaView) run from a saved
+scenario, and the test suite passes. See **Running** below.
+
+A few interactive-display refinements remain (per-panel camera framing
+as the body tumbles, the herpolhode's swept trail, live scenario editing
+through the window); these are tracked in `dev/TODO.md`. The physics,
+the Poinsot geometry, the conservation monitor, and both entry points
+are done and covered by tests.
 
 ## What it will do
 
@@ -53,26 +60,74 @@ downward (does this require child updates?) before committing.
 ## Layout
 
 ```
-dev/        Design document chain
+dev/          Design document chain
+scenarios/    Ready-to-run example scenarios (TOML)
 src/
   rigid_body/   The importable library (physics and display)
-  scripts/      Command-line entry points
-tests/      Test suite (pytest)
+  scripts/      Command-line entry points (rbsim, rbbatch)
+tests/        Test suite (pytest)
 ```
 
 ## Running
 
 The project targets Python 3.10+ with NumPy, SciPy, vedo, VTK, and
-h5py. It is developed and run on a teaching cluster rather than on
-student laptops, which keeps the environment uniform.
-
-Rendering is done in **software**; no GPU is required. Measured frame
-rates and the resulting design budget are recorded in
-`dev/ARCHITECTURE.md`, section 9.3. The short version: geometric
-detail is cheap, window area is the scarce resource.
+h5py, and runs inside a dedicated virtual environment (`rigid`) on the
+teaching cluster. Activate it first:
 
 ```bash
-pytest tests/ -v          # Test suite
+source /cluster/VAST/rulisp-lab/cpg/virtual_envs/rigid/bin/activate
+cd /cluster/pixstor/home/rulisp/CPG/cpg-repo/rigid_body
+```
+
+### Interactive tier — a live window (`rbsim`)
+
+Open a scenario in a live window and watch it tumble. This needs a
+display (an X, VNC, or OnDemand desktop session — plain SSH X11
+forwarding is not recommended, see `dev/ARCHITECTURE.md` §9.3):
+
+```bash
+python src/scripts/rbsim.py scenarios/dzhanibekov.toml
+```
+
+Controls: **space** pauses and resumes, **s** single-steps, **-** slows,
+**+** speeds up, **n** returns to normal speed, **q** quits. Rendering is
+in **software**; no GPU is required.
+
+With no display, render a fixed number of frames offscreen (useful for a
+preview or a headless node):
+
+```bash
+python src/scripts/rbsim.py scenarios/dzhanibekov.toml --offscreen --frames 60
+```
+
+### Batch tier — high-fidelity output for ParaView (`rbbatch`)
+
+Run a scenario deterministically and write the full trajectory to HDF5
+with an XDMF companion (and a live conservation-drift report):
+
+```bash
+python src/scripts/rbbatch.py scenarios/dzhanibekov.toml -o dzhanibekov.h5
+```
+
+The scenario is embedded in the output as provenance, so any result
+traces back to the exact run that produced it, and the same scenario
+reproduces the same trajectory bit-for-bit on any machine.
+
+### Example scenarios
+
+| File | What it shows |
+| --- | --- |
+| `scenarios/dzhanibekov.toml` | The intermediate-axis (tennis-racket) flip: an asymmetric box spun about its middle axis periodically flipping. |
+| `scenarios/free_tumble.toml` | A generic torque-free tumble of the same asymmetric box, with a rich polhode and herpolhode. |
+| `scenarios/symmetric_precession.toml` | A symmetric top (a cylinder) in steady precession: the polhode is a circle. |
+
+A scenario is a plain TOML file describing the body, initial conditions,
+torques, fidelity, and viewpoint; copy one and edit it to make your own.
+
+### Tests
+
+```bash
+pytest tests/ -v
 ```
 
 ## License

@@ -1,0 +1,95 @@
+schema_version = "1.0"
+torque_models = []
+
+[body.specification]
+kind = "cylinder"
+radius = "0.15 m"
+height = "0.6 m"
+density = "2700 kg/m^3"
+
+[body.resolved]
+total_mass = 114.51105222334796
+center_of_mass = [
+    0.0,
+    0.0,
+    0.0,
+]
+principal_moments = [
+    4.079456235456771,
+    4.079456235456771,
+    1.2882493375126645,
+]
+principal_axes = [
+    [
+        1.0,
+        0.0,
+        0.0,
+    ],
+    [
+        0.0,
+        1.0,
+        0.0,
+    ],
+    [
+        0.0,
+        0.0,
+        1.0,
+    ],
+]
+
+[initial_conditions]
+angular_velocity_body = [
+    "0.6 rad/s",
+    "0.0 rad/s",
+    "4.0 rad/s",
+]
+angular_velocity_body_si = [
+    0.6,
+    0.0,
+    4.0,
+]
+orientation_quaternion = [
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+]
+orientation_euler_zxz = [
+    "0 deg",
+    "0 deg",
+    "0 deg",
+]
+
+[fidelity]
+integrator = "rk4"
+time_step = 0.002
+substeps_per_frame = 8
+integration_span = 20.0
+
+[retention]
+limit_samples = 200000
+
+[presentation]
+frame = "space"
+layout = "side_by_side"
+palette = "light"
+ellipsoid_scale = "inertia"
+
+[presentation.camera]
+position = [
+    2.5,
+    2.0,
+    1.6,
+]
+target = [
+    0.0,
+    0.0,
+    0.0,
+]
+up = [
+    0.0,
+    0.0,
+    1.0,
+]
+
+[presentation.scale_factors]
