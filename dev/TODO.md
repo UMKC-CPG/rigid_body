@@ -289,10 +289,26 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       per sample pointing back at the HDF5 datasets. 163 total.
       (Provenance wiring -- a scenario_to_toml helper feeding this sink --
       lands with the rbbatch entry script.)
-- [ ] Next: the render/ui interactive tier (`scene_description`,
-      `palettes`, `vedo_renderer`, `controls`, `time_control`), the
-      `live_sink`, the §1.2 interactive driver, and the rbsim/rbbatch entry
-      scripts (XYZ idiom).
+- [x] `render/scene_description.py` (PSEUDOCODE §14.2, §14.5, §14.6) — the
+      renderer-agnostic middle stage: a Drawable record (geometry, role,
+      panel, coordinate_frame, label, scale_note), build_scene assembling
+      the per-frame inventory from computed quantities, the ellipsoid-scale
+      label (§14.5), and the telemetry overlay (§14.6, drift report + trend
+      + time ratio + Euler angles with degeneracy). The Poinsot trio is
+      torque-gated (present only when the monitor's torque list is empty); a
+      moments-only body falls back to the ellipsoid proxy; the two shared
+      arrows are stored in their native frames (omega body, L space) with
+      coordinate_frame so the renderer can re-express them per panel; every
+      drawable carries a non-empty label (Principle 5) and meaningful
+      distinctions are redundant in role/label, not color alone (§14.3). 13
+      unit tests. 176 total. NOTE: added a `coordinate_frame` field beyond
+      the PSEUDOCODE §14.2 Drawable sketch -- the renderer needs each
+      shared vector's native frame to call to_view (§11.2); a small,
+      documented code-level refinement worth reflecting back into §14.2.
+- [ ] Next: `render/palettes.py` (§14.3, role->encoding), then
+      `render/vedo_renderer.py`, `ui/controls.py`, `ui/time_control.py`,
+      `sinks/live_sink.py`, the §1.2 interactive driver, and the
+      rbsim/rbbatch entry scripts (XYZ idiom).
 
 ---
 
