@@ -417,10 +417,34 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       level; §1.2 renders inline from the loop's own state. Built here as a
       transport adapter -- the shape the constraints leave to code -- with
       its exact frame-loop/vedo_renderer interplay settled when those land.
-- [ ] Next (all genuinely vedo-bound): `render/vedo_renderer.py` (the
-      first vedo/pixels module), the §1.2 interactive driver with the vedo
-      widget bindings for ui/controls, and the `scripts/rbsim.py`
-      interactive entry point (XYZ idiom).
+- [x] `render/vedo_renderer.py` (ARCH §5.3) — the renderer boundary: the
+      only module that imports vedo/VTK. VedoRenderer turns a Scene + Palette
+      into pixels, one panel per held-still frame (side_by_side for the
+      Goal-5 two-frame view, or single). Each drawable is re-expressed into
+      its panel's frame at draw time via its coordinate_frame (§11.2), and
+      encoded by the palette (color/opacity/line weight, dashed/dash-dot
+      stipple, single vs double arrowhead). Actor builders for all ten
+      roles: body mesh (per shape primitive), momental ellipsoid (scaled
+      wireframe), polhode (line, or point for a spherical top), invariable
+      plane, herpolhode marker, the omega/L direction arrows (drawn at a
+      display length tied to the ellipsoid, a labeled §14.5 convention),
+      the two triads, and the Text2D telemetry overlay. Verified offscreen:
+      a rich two-panel render with correct frame coding (body warm hue /
+      space cool hue). 5 integration tests (framebuffer readback, skip
+      without GL): the scene rasterizes to real pixels in both layouts; the
+      color-blind palette renders; a damped cube (torque, no Poinsot,
+      point polhode) renders; and successive frames render without error.
+      255 total.
+      DEFERRED refinements (all documented in code): the herpolhode swept
+      trail + bounding band (needs renderer-held frame history), tighter
+      per-panel camera framing, and Platonic body meshes (currently a sphere
+      proxy -- the physics is spherical anyway).
+- [ ] Next (vedo-bound glue): the §1.2 interactive driver
+      (run_interactive_session) tying engine + live_sink + renderer +
+      monitor + controls, the vedo widget bindings for ui/controls
+      (read_controls from a live window), and `scripts/rbsim.py` + rbsimrc.py
+      (the interactive XYZ entry point). Optional: a short DESIGN paragraph
+      pinning the live_sink / frame-loop / renderer interplay.
 
 ---
 
