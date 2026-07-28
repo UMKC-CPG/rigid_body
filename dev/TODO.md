@@ -370,10 +370,24 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       This closes §13; the deferred time_control.replay_state_at (§15.5) can
       now compose Trajectory.read (in-window) with KeyframeStore.read_at_time
       (deep past).
-- [ ] Next: `render/vedo_renderer.py` (the first vedo/pixels module),
-      `sinks/live_sink.py`, time_control's replay_state_at (§15.5, now
-      unblocked), the §1.2 interactive driver, and the rbsim/rbbatch entry
-      scripts (XYZ idiom).
+- [x] `dynamics/time_control.replay_state_at` (PSEUDOCODE §15.5) — the
+      replay scrubber lookup, composing the two §13 retention policies into
+      one read: the recent past from the ring buffer, the deep past from the
+      keyframe store. Added `Trajectory.read_at_time` (nearest in-window
+      sample by binary search, ends clamped) as the by-time in-window read.
+      A future target is clamped to the frontier (replay cannot outrun the
+      engine); a deep-past target with no keyframe store raises LookupError.
+      7 unit tests: in-window reads match the reference exactly; the deep
+      past re-integrates bit-for-bit through keyframes; a future time clamps
+      to the newest state; no-keyframe deep past raises; replay is read-only
+      (repeat reads agree) across both paths; and read_at_time finds the
+      nearest sample / clamps at the ends. This closes the last headless
+      §15.5 gap. 235 total.
+- [ ] Next (all vedo-bound or glue): `render/vedo_renderer.py` (the first
+      vedo/pixels module), `sinks/live_sink.py`, the §1.2 interactive
+      driver with the vedo widget bindings for ui/controls, and the
+      rbsim/rbbatch entry scripts (XYZ idiom). `rbbatch` stays headless and
+      also wires the deferred scenario_to_toml provenance into hdf5_sink.
 
 ---
 

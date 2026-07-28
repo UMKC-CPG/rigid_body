@@ -113,6 +113,24 @@ def test_time_span_and_containment():
     assert not trajectory.contains_time(2.0)
 
 
+def test_read_at_time_finds_the_nearest_in_window_sample():
+    trajectory = Trajectory(capacity=6)
+    for step in range(4):
+        trajectory.append(marker_state(step), 0.5 * step)   # times 0..1.5
+    # An exact hit, and two off-grid targets resolving to the nearer side.
+    assert trajectory.read_at_time(0.5)[0].angular_velocity_body[0] == 1
+    assert trajectory.read_at_time(0.6)[0].angular_velocity_body[0] == 1
+    assert trajectory.read_at_time(0.8)[0].angular_velocity_body[0] == 2
+    # Past either end clamps to that end.
+    assert trajectory.read_at_time(-1.0)[0].angular_velocity_body[0] == 0
+    assert trajectory.read_at_time(9.0)[0].angular_velocity_body[0] == 3
+
+
+def test_read_at_time_on_empty_buffer_raises():
+    with pytest.raises(IndexError):
+        Trajectory(capacity=3).read_at_time(0.0)
+
+
 def test_empty_buffer_reports_empty():
     trajectory = Trajectory(capacity=4)
     assert len(trajectory) == 0

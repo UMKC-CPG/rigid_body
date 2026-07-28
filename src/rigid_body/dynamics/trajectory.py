@@ -152,6 +152,37 @@ class Trajectory:
         retained = self.sample(cursor)
         return retained.state, retained.time
 
+    def read_at_time(self, target_time):
+        """Return ``(state, time)`` of the in-window sample nearest a time.
+
+        The replay scrubber addresses the run by time, not by cursor, so
+        this resolves a time to the closest retained sample. The window's
+        sample times increase with the cursor, so a binary search finds the
+        nearest one; a target at or beyond either end returns that end.
+        Raises if the window is empty.
+        """
+        if self.count == 0:
+            raise IndexError("cannot read a time from an empty trajectory")
+        if target_time <= self.sample(0).time:
+            return self.read(0)
+        if target_time >= self.sample(self.count - 1).time:
+            return self.read(self.count - 1)
+
+        # Binary search for the first cursor whose time is >= the target,
+        # then keep whichever of it and its predecessor is closer.
+        low, high = 0, self.count - 1
+        while low < high:
+            middle = (low + high) // 2
+            if self.sample(middle).time < target_time:
+                low = middle + 1
+            else:
+                high = middle
+        after_time = self.sample(low).time
+        before_time = self.sample(low - 1).time
+        if abs(after_time - target_time) < abs(before_time - target_time):
+            return self.read(low)
+        return self.read(low - 1)
+
     def newest(self):
         """Return ``(state, time)`` of the most recent sample, or ``None``."""
         if self.count == 0:

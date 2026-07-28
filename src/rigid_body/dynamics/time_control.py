@@ -139,3 +139,46 @@ def pace_after_frame(pace):
     if pace is Pace.SINGLE_STEP:
         return Pace.PAUSED
     return pace
+
+
+# --------------------------------------------------------------------
+# The replay scrubber (Section 15.5)
+# --------------------------------------------------------------------
+
+def replay_state_at(trajectory, keyframes, target_time):
+    """Return the replayed ``(state, time)`` nearest a target time.
+
+    The replay control *reads* history rather than stepping (Section 15.5):
+    it draws stored states for the recent past and, beyond the retained
+    window, re-integrates from a keyframe. This composes the two retention
+    policies of Section 13 into the single lookup the frame loop calls --
+    the recent past from the ring buffer (Section 13.4), the deep past from
+    the keyframe store (Section 13.5). Either way it is a pure read that
+    cannot perturb a single computed state (Section 15.2, 13.2); replay is
+    re-reading stored states, never running the engine backward, which no
+    dissipative scenario could do anyway.
+
+    ``trajectory`` is the in-memory ring buffer (or ``None`` for a
+    keyframe-only session), ``keyframes`` the deep-past store (or ``None``
+    when only the window is kept), and ``target_time`` the scrubber's
+    position resolved to a simulated time. A time past the computed frontier
+    is clamped to the newest retained state, since replay cannot run ahead
+    of what the engine has produced. Raises :class:`LookupError` when the
+    time falls before the window and no keyframe store can reach it.
+    """
+    if trajectory is not None:
+        span = trajectory.time_span()
+        if span is not None:
+            oldest_time, newest_time = span
+            if target_time >= oldest_time:
+                # Within the window, or ahead of it -- clamp a future
+                # target to the frontier rather than extrapolate.
+                return trajectory.read_at_time(
+                    min(target_time, newest_time))
+
+    if keyframes is not None:
+        return keyframes.read_at_time(target_time)
+
+    raise LookupError(
+        f"replay time {target_time} is before the retained window and "
+        "no keyframe store is available to reach it")
