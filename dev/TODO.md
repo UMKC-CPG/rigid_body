@@ -258,9 +258,25 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       invariable plane holds still through a run; the herpolhode lies in it;
       and the band is a circle for a symmetric top, an annulus for an
       asymmetric one. 145 total.
-- [ ] Next: reference frames (§11), then the render/ui interactive tier
-      (`scene_description`, `palettes`, `vedo_renderer`, `controls`,
-      `time_control`) and the rbsim/rbbatch entry scripts (XYZ idiom).
+- [x] `geometry/reference_frames.py` (PSEUDOCODE §11) — one motion in
+      either frame, drawing nothing: express_in_space/express_in_body (the
+      single body_to_space rotation and its inverse), the Frame enum and
+      to_view (express a quantity in the held-still view), frame_invariants
+      (the frame-free scalars: energies, |L|, |omega|, the omega-to-L angle,
+      the moments), and angular_momentum_body_curve (L = I omega along the
+      polhode, the §11.4 companion curve). 11 unit tests: the two mappings
+      are exact inverses and agree with the state layer's
+      angular_momentum_space; to_view passes a view-frame vector through and
+      carries the other across; the omega-to-L angle is identical read in
+      body or space; through a torque-free run the conserved invariants hold
+      while |omega| and the angle demonstrably vary (frame-free is not
+      time-constant); the body-frame L sweeps while the space-frame L holds
+      still; and the companion curve rides the fixed-radius |L| sphere.
+      **Completes the headless geometry layer.** 156 total.
+- [ ] Next: the render/ui interactive tier (`scene_description`,
+      `palettes`, `vedo_renderer`, `controls`, `time_control`), the
+      `live_sink`/`hdf5_sink` sinks, the §1.2 interactive driver, and the
+      rbsim/rbbatch entry scripts (XYZ idiom).
 
 ---
 
