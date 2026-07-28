@@ -273,10 +273,26 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       time-constant); the body-frame L sweeps while the space-frame L holds
       still; and the companion curve rides the fixed-radius |L| sphere.
       **Completes the headless geometry layer.** 156 total.
+- [x] `sinks/hdf5_sink.py` (PSEUDOCODE §13.6, ARCH §9.4) — the recording
+      sink that spills the full state stream to disk with bounded memory:
+      resizable, chunked HDF5 datasets (time, body_to_space_quaternion,
+      angular_velocity_body) fed from a small in-memory batch flushed when
+      full; self-describing root metadata (schema version, SI units,
+      quaternion convention, sample count) with the run's scenario embedded
+      as TOML provenance; and an XDMF companion (a temporal point collection
+      hyper-slabbing each timestep out of the datasets) so ParaView can read
+      the trajectory. 7 integration tests: disk matches the emitted stream
+      byte-for-byte across several flushes plus a partial one; hand-fed
+      states round-trip exactly; recording does not change the trajectory
+      (read-only); provenance/metadata are present; an empty run and a
+      double close are clean; and the XDMF is well-formed with one timestep
+      per sample pointing back at the HDF5 datasets. 163 total.
+      (Provenance wiring -- a scenario_to_toml helper feeding this sink --
+      lands with the rbbatch entry script.)
 - [ ] Next: the render/ui interactive tier (`scene_description`,
       `palettes`, `vedo_renderer`, `controls`, `time_control`), the
-      `live_sink`/`hdf5_sink` sinks, the §1.2 interactive driver, and the
-      rbsim/rbbatch entry scripts (XYZ idiom).
+      `live_sink`, the §1.2 interactive driver, and the rbsim/rbbatch entry
+      scripts (XYZ idiom).
 
 ---
 
