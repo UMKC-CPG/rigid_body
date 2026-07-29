@@ -87,9 +87,10 @@ FRAME_FAMILY = {
 _ROLE_STYLE = {
     # The body is a translucent surface so its interior stays visible.
     "body_mesh": (LINE_STYLE_SOLID, LINE_WEIGHT_MEDIUM, 0.5, MARKER_NONE),
-    # The ellipsoid is a faint wireframe-weight surface behind it.
+    # The ellipsoid is a light wireframe-weight surface behind it, kept
+    # translucent but present enough to read against its background.
     "momental_ellipsoid": (
-        LINE_STYLE_SOLID, LINE_WEIGHT_THIN, 0.3, MARKER_NONE),
+        LINE_STYLE_SOLID, LINE_WEIGHT_THIN, 0.45, MARKER_NONE),
     # The two traces differ by dash pattern (and by hue, and by label).
     "polhode": (LINE_STYLE_DASHED, LINE_WEIGHT_MEDIUM, 1.0, MARKER_NONE),
     "herpolhode": (
@@ -137,20 +138,32 @@ class Encoding(NamedTuple):
 
 
 class Palette(NamedTuple):
-    """A named, selectable role-to-encoding table (Principle 6)."""
+    """A named, selectable role-to-encoding table (Principle 6).
+
+    ``background`` is the window color the scheme is meant to be read
+    against, carried on the palette so the renderer never has to guess: a
+    light scheme's dark inks belong on a pale field, a dark scheme's bright
+    inks on a near-black one. Pairing them here is what keeps a drawable
+    from vanishing into a mismatched background (a viewer's report), since
+    the palette alone knows which field its hues were chosen for.
+    """
 
     name: str
     encodings: dict
+    background: str = "#101014"
 
 
-def _build_palette(name, body_color, space_color, neutral_color):
+def _build_palette(name, body_color, space_color, neutral_color,
+                   background):
     """Assemble a palette from its three frame hues and the shared styles.
 
-    Only the three colors vary between palettes; every role's line style,
+    Only the colors vary between palettes; every role's line style,
     weight, opacity, and marker come from the palette-independent
     ``_ROLE_STYLE`` table. This is the mechanism that keeps the redundancy
     rule true in every scheme -- a color-blind palette changes the hues and
-    nothing else, so no distinction it might blur in color is lost.
+    nothing else, so no distinction it might blur in color is lost. The
+    ``background`` travels with the scheme so its inks always land on the
+    field they were chosen for.
     """
     family_color = {
         "body": body_color, "space": space_color,
@@ -162,29 +175,33 @@ def _build_palette(name, body_color, space_color, neutral_color):
             color=family_color[FRAME_FAMILY[role]],
             line_style=line_style, line_weight=line_weight,
             opacity=opacity, marker=marker)
-    return Palette(name=name, encodings=encodings)
+    return Palette(
+        name=name, encodings=encodings, background=background)
 
 
 # --------------------------------------------------------------------
 # The built-in palettes
 # --------------------------------------------------------------------
 
-# Light scheme: a warm body hue against a cool space hue, dark neutral.
+# Light scheme: a warm body hue against a cool space hue, dark neutral,
+# read against a near-white field so the dark inks stay legible.
 LIGHT_PALETTE = _build_palette(
     "light", body_color="#c1440e", space_color="#1f6feb",
-    neutral_color="#333333")
+    neutral_color="#333333", background="#f4f4f4")
 
-# Dark scheme: the same two hue families lightened for a dark background.
+# Dark scheme: the same two hue families lightened for a dark background,
+# read against a near-black field the bright inks stand out on.
 DARK_PALETTE = _build_palette(
     "dark", body_color="#ff9f6b", space_color="#79b8ff",
-    neutral_color="#dddddd")
+    neutral_color="#dddddd", background="#101014")
 
 # Color-blind-safe scheme: the Okabe-Ito orange and blue, chosen because
 # they stay distinct across the common forms of color vision deficiency;
-# the redundant line styles and labels carry the rest (Section 14.3).
+# the redundant line styles and labels carry the rest (Section 14.3). Its
+# saturated inks read cleanly on a plain white field.
 COLOR_BLIND_SAFE_PALETTE = _build_palette(
     "color_blind_safe", body_color="#e69f00", space_color="#0072b2",
-    neutral_color="#000000")
+    neutral_color="#000000", background="#ffffff")
 
 # The registry select_palette dispatches on, by name.
 PALETTES = {

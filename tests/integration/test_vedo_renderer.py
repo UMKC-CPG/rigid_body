@@ -57,12 +57,18 @@ def torque_free_scene():
     return scene, state
 
 
+# These tests force a black window (rather than the palette's own field)
+# so the "bright pixel == scene content" premise below holds regardless of
+# which scheme is rendered.
+_TEST_BACKGROUND = "black"
+
+
 def foreground_and_colors(image):
     """Return (foreground fraction, distinct sampled colors) of an image.
 
-    The background is black, so any bright pixel belongs to the scene; a
-    healthy render covers an appreciable share of the frame with many
-    distinct colors, while a blank buffer fails both.
+    The background is forced black, so any bright pixel belongs to the
+    scene; a healthy render covers an appreciable share of the frame with
+    many distinct colors, while a blank buffer fails both.
     """
     flat = image.reshape(-1, image.shape[-1])
     foreground_fraction = float((flat.max(axis=1) > 12).mean())
@@ -78,7 +84,8 @@ def render_to_array(scene, state, palette, layout):
     """
     try:
         renderer = VedoRenderer(
-            palette, layout=layout, size=(800, 600), offscreen=True)
+            palette, layout=layout, size=(800, 600), offscreen=True,
+            background=_TEST_BACKGROUND)
     except Exception as problem:                    # pragma: no cover
         pytest.skip(f"no offscreen render context: {problem}")
     try:
@@ -134,7 +141,7 @@ def test_successive_frames_render_without_error():
     try:
         renderer = VedoRenderer(
             pal.LIGHT_PALETTE, layout="side_by_side", size=(640, 480),
-            offscreen=True)
+            offscreen=True, background=_TEST_BACKGROUND)
     except Exception as problem:                    # pragma: no cover
         pytest.skip(f"no offscreen render context: {problem}")
     try:

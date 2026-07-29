@@ -54,6 +54,23 @@ _STIPPLE_PATTERNS = {
 _OMEGA_ARROW_LENGTH = 1.25
 _MOMENTUM_ARROW_LENGTH = 1.5
 
+# The wireframe resolution of the momental ellipsoid. A coarse mesh reads
+# as a clean surface; a fine one turns to visual noise (a viewer's report),
+# so the ellipsoid is drawn far coarser than the solid body meshes.
+_ELLIPSOID_MESH_RESOLUTION = 12
+
+# On-screen 3D text: the label size as a fraction of the scene's reference
+# size, and how far past an arrow tip its name is set so it clears the head.
+_LABEL_TEXT_FRACTION = 0.16
+_LABEL_TIP_OFFSET = 1.10
+
+# The per-axis names the two triads carry, so each arm is labeled where it
+# points (the body axes 1, 2, 3 against the space axes X, Y, Z, Section
+# 14.4). Only these labels keep the frames apart under a color-blind scheme.
+_TRIAD_AXIS_NAMES = {
+    "body_triad": ("1", "2", "3"),
+    "lab_triad": ("X", "Y", "Z")}
+
 
 class VedoRenderer:
     """Draw a scene, one panel per held-still frame, with a palette.
@@ -67,9 +84,14 @@ class VedoRenderer:
     """
 
     def __init__(self, palette, layout="side_by_side", size=(1280, 960),
-                 offscreen=False, background="black"):
+                 offscreen=False, background=None):
         self.palette = palette
         self.layout = layout
+        # The window color: the palette's own field unless overridden, so a
+        # scheme's inks always land on the background they were chosen for
+        # and never vanish into a mismatched one (a viewer's report).
+        self.background = (background if background is not None
+                           else getattr(palette, "background", "#101014"))
         # Which frame each panel holds still. Single-panel defaults to the
         # space-frame view -- the view from the room.
         if layout == "side_by_side":
@@ -80,7 +102,7 @@ class VedoRenderer:
         vedo.settings.immediate_rendering = False
         self.plotter = vedo.Plotter(
             shape=(1, len(self.panel_frames)), size=size,
-            offscreen=offscreen, bg=background, axes=0)
+            offscreen=offscreen, bg=self.background, axes=0)
         # The actors currently shown in each panel, so they can be cleared
         # before the next frame is built.
         self._panel_actors = [[] for _ in self.panel_frames]
@@ -96,18 +118,21 @@ class VedoRenderer:
         for panel_index, view_frame in enumerate(self.panel_frames):
             actors = self._build_panel_actors(
                 scene, state, view_frame, rotation)
+            actors.append(_panel_title_actor(view_frame))
             panel = self.plotter.at(panel_index)
             panel.remove(self._panel_actors[panel_index])
             panel.add(actors)
             self._panel_actors[panel_index] = actors
-        # Frame the scene once, on the first render, then leave the camera
-        # to the viewer (moving the camera is never a change of frame,
-        # Section 11.6).
-        self.plotter.render()
+        # Frame each panel to its own contents once, on the first render,
+        # then leave the camera to the viewer (moving the camera is never a
+        # change of frame, Section 11.6). A single global reset would frame
+        # only the active panel and leave the other camera inside its
+        # geometry (a viewer's report), so each panel is reset in turn.
         if not self._camera_reset_done:
-            self.plotter.reset_camera()
-            self.plotter.render()
+            for panel_index in range(len(self.panel_frames)):
+                self.plotter.at(panel_index).reset_camera()
             self._camera_reset_done = True
+        self.plotter.render()
 
     def screenshot(self, path=None, as_array=False):
         """Capture the current frame to a PNG path or a NumPy array."""
@@ -157,10 +182,11 @@ class VedoRenderer:
                       else _MOMENTUM_ARROW_LENGTH)
             return _vector_actors(
                 drawable.geometry, encoding, view,
-                reference_scale * length)
+                reference_scale * length, drawable.label, reference_scale)
         if role in ("body_triad", "lab_triad"):
             return _triad_actors(
-                drawable.geometry, encoding, view, reference_scale)
+                drawable.geometry, encoding, view, reference_scale,
+                _TRIAD_AXIS_NAMES[role])
         if role == "telemetry":
             return _telemetry_actors(drawable.geometry)
         return []
@@ -279,7 +305,7 @@ def _mesh_for_shape(shape):
 
 def _ellipsoid_actors(ellipsoid, encoding, view):
     """Build the momental ellipsoid as a translucent wireframe."""
-    mesh = vedo.Sphere(r=1.0, res=32).scale(
+    mesh = vedo.Sphere(r=1.0, res=_ELLIPSOID_MESH_RESOLUTION).scale(
         [float(axis) for axis in ellipsoid.semi_axes])
     mesh.wireframe(True).c(encoding.color).alpha(encoding.opacity)
     # Orient by the body's principal axes, then into the view frame.
@@ -324,14 +350,17 @@ def _herpolhode_actors(geometry, encoding, view, reference_scale):
     return [marker]
 
 
-def _vector_actors(vector, encoding, view, display_length):
+def _vector_actors(vector, encoding, view, display_length, label,
+                   reference_scale):
     """Build a shared arrow (omega or L) as a direction at a fixed length.
 
     The magnitude carries physical units that differ between the two
     arrows, so the arrow shows the *direction* at a display length tied to
     the scene, with the magnitude read from the telemetry overlay (Section
     14.5). ``L`` gets a second arrowhead, so it differs from ``omega`` in
-    shape as well as in hue and label (Section 14.3).
+    shape as well as in hue and label (Section 14.3). The drawable's own
+    label is drawn at the tip, so a viewer reads which arrow is which
+    directly off the picture rather than from a legend.
     """
     direction = np.asarray(vector, dtype=float)
     magnitude = float(np.linalg.norm(direction))
@@ -344,11 +373,19 @@ def _vector_actors(vector, encoding, view, display_length):
         # A second, shorter head near the base gives the double-arrow look.
         actors.append(vedo.Arrow(
             0.15 * tip, 0.55 * tip, c=encoding.color))
+    actors.append(_label_actor(
+        label, tip * _LABEL_TIP_OFFSET, encoding.color, reference_scale))
     return actors
 
 
-def _triad_actors(axes, encoding, view, reference_scale):
-    """Build a coordinate triad as three arrows along its axis columns."""
+def _triad_actors(axes, encoding, view, reference_scale, axis_names):
+    """Build a coordinate triad as three labeled arrows along its columns.
+
+    Each arm is drawn in the frame's hue and tagged with its axis name at
+    the tip (1, 2, 3 for the body, X, Y, Z for space). Those names are what
+    tell the two frames apart when color cannot (Section 14.4), so they are
+    drawn on the arms, not just carried as data.
+    """
     axis_matrix = np.asarray(axes, dtype=float)
     length = 1.2 * reference_scale
     actors = []
@@ -356,13 +393,41 @@ def _triad_actors(axes, encoding, view, reference_scale):
         tip = (view @ axis_matrix[:, column]) * length
         actors.append(vedo.Arrow(
             (0.0, 0.0, 0.0), tip, c=encoding.color))
+        actors.append(_label_actor(
+            axis_names[column], tip * _LABEL_TIP_OFFSET,
+            encoding.color, reference_scale))
     return actors
+
+
+def _label_actor(text, position, color, reference_scale):
+    """Build a small 3D text label at a point, in the drawable's hue.
+
+    The label rides in the scene as a 3D object (rather than flat overlay
+    text) so it sits beside the quantity it names in whichever panel the
+    quantity appears, sized relative to the scene so it stays legible
+    without dominating (Section 14.2, the label travels with the drawable).
+    """
+    size = _LABEL_TEXT_FRACTION * float(reference_scale)
+    return vedo.Text3D(
+        text, pos=position, s=size, c=color, justify="center")
 
 
 def _telemetry_actors(readout):
     """Build the on-screen conservation readout as 2D text (Section 14.6)."""
     return [vedo.Text2D(
         _format_telemetry(readout), pos="top-left", s=0.8)]
+
+
+def _panel_title_actor(view_frame):
+    """Build the corner label naming which frame a panel holds still.
+
+    The two-panel layout is a body-frame view beside a space-frame view
+    (Section 11.2); naming each panel keeps the split from reading as an
+    unexplained division of the window (a viewer's report). It sits in the
+    top-right corner, clear of the telemetry overlay at the top-left.
+    """
+    name = "Body frame" if view_frame is Frame.BODY else "Space frame"
+    return vedo.Text2D(name, pos="top-right", s=1.0)
 
 
 def _format_telemetry(readout):

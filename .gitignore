@@ -58,3 +58,6 @@ slurm-*.out
 .DS_Store
 .idea/
 .vscode/
+
+# Machine-local rc overrides ($RIGID_BODY_RC copies); never tracked.
+.rigid_body/
