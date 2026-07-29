@@ -257,8 +257,7 @@ def build_scene(state, body, monitor, presentation=None, report=None,
             geometry=body.geometry, role="body_mesh",
             panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
             label="rigid body",
-            scale_note="object shown enlarged for visibility, not to "
-                       "scale with the ellipsoid"))
+            scale_note="object enlarged for visibility (not to scale)"))
 
     ellipsoid = momental_ellipsoid(body)
     reference_scale = float(np.max(np.asarray(
@@ -320,6 +319,26 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     return Scene(
         drawables=_visible_only(drawables, visible_layers),
         reference_scale=reference_scale)
+
+
+def active_scale_notes(scene):
+    """Return the scale notes of the drawables a scene currently shows.
+
+    Each quantity drawn off its physical magnitude carries a ``scale_note``
+    (Section 14.5); this gathers the notes of the drawables the scene
+    actually contains, so a note appears exactly when its quantity is on
+    screen and vanishes when its layer is toggled off (Section 15.7). The
+    result is deduplicated in first-seen order, for the renderer to show as
+    the honest on-screen footnote VISION Principle 12 requires: making a
+    quantity visible off its true scale is legitimate, doing so silently is
+    not.
+    """
+    notes = []
+    for drawable in scene.drawables:
+        note = getattr(drawable, "scale_note", None)
+        if note and note not in notes:
+            notes.append(note)
+    return notes
 
 
 def _visible_only(drawables, visible_layers):

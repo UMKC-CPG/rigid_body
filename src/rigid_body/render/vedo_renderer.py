@@ -36,7 +36,8 @@ from rigid_body.core.orientation import quaternion_to_matrix
 from rigid_body.geometry.reference_frames import Frame
 from rigid_body.body import shapes
 from rigid_body.render.scene_description import (
-    DrawablePanel, HerpolhodeGeometry, TelemetryReadout)
+    DrawablePanel, HerpolhodeGeometry, TelemetryReadout,
+    active_scale_notes)
 from rigid_body.render.palettes import (
     resolve_encoding, LINE_STYLE_DASHED, LINE_STYLE_DASH_DOT,
     MARKER_DOUBLE_ARROW)
@@ -135,6 +136,11 @@ class VedoRenderer:
     def render(self, scene, state):
         """Draw one frame of ``scene`` at ``state`` into every panel."""
         rotation = quaternion_to_matrix(state.body_to_space_quaternion)
+        # The honest footnote of what is drawn off its physical scale
+        # (Section 14.5), gathered from the drawables the scene now shows --
+        # so a note appears and disappears with its layer (Section 15.7).
+        scale_notes = active_scale_notes(scene)
+        last_panel = len(self.panel_frames) - 1
         for panel_index, view_frame in enumerate(self.panel_frames):
             actors = self._build_panel_actors(
                 scene, state, view_frame, rotation)
@@ -143,6 +149,9 @@ class VedoRenderer:
             # it is shown once rather than duplicated across panels.
             if panel_index == 0 and self.legend_lines:
                 actors.append(_legend_actor(self.legend_lines))
+            # The scale-note footnote rides in the last panel's corner.
+            if panel_index == last_panel and scale_notes:
+                actors.append(_scale_notes_actor(scale_notes))
             panel = self.plotter.at(panel_index)
             panel.remove(self._panel_actors[panel_index])
             panel.add(actors)
@@ -536,6 +545,18 @@ def _legend_actor(lines):
     the top-left or the frame title at the top-right.
     """
     return vedo.Text2D("\n".join(lines), pos="bottom-left", s=0.75)
+
+
+def _scale_notes_actor(notes):
+    """Build the on-screen scale-note footnote (Section 14.5, Principle 12).
+
+    One honest line per quantity shown off its physical magnitude, drawn low
+    in the last panel's corner so a viewer always sees which quantities are
+    scaled for display and never mistakes a display scaling for physics. The
+    notes travel with the drawables (Section 14.2); this only lays them out.
+    """
+    text = "\n".join(f"* {note}" for note in notes)
+    return vedo.Text2D(text, pos="bottom-right", s=0.7)
 
 
 def _format_telemetry(readout):

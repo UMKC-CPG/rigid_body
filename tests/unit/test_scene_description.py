@@ -252,6 +252,29 @@ def test_the_object_states_it_is_not_to_scale():
     assert "scale" in body_mesh.scale_note.lower()
 
 
+def test_active_scale_notes_lists_the_shown_scaled_quantities():
+    # Both the object and the ellipsoid are drawn scaled, so the footnote
+    # the renderer shows names both (Principle 12, surfaced on screen).
+    _body, _state, scene = torque_free_scene()
+    notes = sd.active_scale_notes(scene)
+    assert any("not to scale" in note for note in notes)
+    assert any("ellipsoid scaled" in note for note in notes)
+
+
+def test_hiding_a_layer_drops_its_scale_note_from_the_footnote():
+    # Toggling the object off must take its "not to scale" note with it, so
+    # the footnote never claims something is scaled that is not on screen.
+    body = make_body(ASYMMETRIC_BOX)
+    state = st.State(IDENTITY_QUATERNION, TUMBLING_OMEGA)
+    monitor = ConservationMonitor(state, body, [])
+    scene = sd.build_scene(
+        state, body, monitor,
+        visible_layers=frozenset({"ellipsoid", "vectors", "triads"}))
+    notes = sd.active_scale_notes(scene)
+    assert not any("not to scale" in note for note in notes)
+    assert any("ellipsoid scaled" in note for note in notes)
+
+
 # --------------------------------------------------------------------
 # A moments-only body falls back to the ellipsoid proxy (Section 4)
 # --------------------------------------------------------------------

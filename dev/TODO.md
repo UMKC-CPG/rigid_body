@@ -528,10 +528,26 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       surface and split by kind; the body scales to the display fraction
       keeping its edge ratios; the reference scale survives hiding the
       ellipsoid; the object states it is not to scale). 305 total.
-- [ ] Deferred interactive refinements: surfacing the scale_notes on screen
-      (the object's "not to scale" and the ellipsoid's inertia/energy note
-      are carried in data per §14.5 but not yet drawn -- the honest
-      on-screen footnote Principle 12 ultimately wants); the herpolhode
+- [x] BUG FIXED (serialization/§11.3): the interactive tier drew NO object
+      at all. build_run_components -> _rigid_body_from_resolved set
+      geometry=None, so build_scene skipped the body_mesh for every loaded
+      scenario (the "body" layer was empty; the object seen earlier was
+      arrow bases). DESIGN §11.3 says the specification is "what the
+      renderer needs in order to draw a shape" -- so the shape is now
+      rebuilt from the specification and attached as geometry (drawing
+      only; the dynamics still run on the recorded tensor, determinism
+      untouched). 2 round-trip tests: a reloaded shape body carries its
+      geometry while its resolved moments are unchanged; a moments-only
+      body stays geometryless (ellipsoid proxy).
+- [x] Scale notes surfaced on screen (§14.5, Principle 12). active_scale_notes
+      gathers the scale_note of each drawable the scene shows (so a note
+      appears/vanishes with its layer), and the renderer draws them as a
+      bottom-right footnote: "object enlarged for visibility (not to
+      scale)" and "ellipsoid scaled to inertia (unit form)". Making a
+      quantity visible off its true scale is now never silent. 2 tests
+      (the footnote lists both shown scaled quantities; hiding a layer
+      drops its note). 309 total.
+- [ ] Deferred interactive refinements: the herpolhode
       swept trail + bounding band (now feasible with the driver feeding
       frames); true Platonic body meshes; live scenario editing through the
       UI (currently pending_edit stays None -- time and layer controls
