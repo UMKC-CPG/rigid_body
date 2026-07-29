@@ -143,6 +143,44 @@ def test_single_step_takes_exactly_one_substep():
 
 
 # --------------------------------------------------------------------
+# Display layers reach the scene through the loop (Section 15.7)
+# --------------------------------------------------------------------
+
+class RoleRecordingRenderer:
+    """A renderer that records the set of roles drawn in each frame."""
+
+    def __init__(self):
+        self.role_sets = []
+
+    def render(self, scene, state):
+        self.role_sets.append(
+            {drawable.role for drawable in scene.drawables})
+
+    def close(self):
+        pass
+
+
+def test_a_hidden_layer_never_reaches_the_renderer():
+    # The driver must pass the controls' visible layers into build_scene, so
+    # a switched-off layer is absent from every frame that is drawn.
+    scenario = make_scenario(nominal_substeps=2)
+    renderer = RoleRecordingRenderer()
+    hide_ellipsoid = Controls(
+        pace=Pace.NORMAL, nominal_substeps=2,
+        visible_layers=frozenset({"body", "vectors", "triads"}))
+    run_interactive(
+        scenario, renderer, ScriptedControls([hide_ellipsoid] * 2))
+    assert renderer.role_sets                  # frames were drawn
+    for roles in renderer.role_sets:
+        # The whole ellipsoid layer is absent...
+        assert "momental_ellipsoid" not in roles
+        assert "polhode" not in roles
+        # ...while the surviving layers and the overlay still arrive.
+        assert "angular_velocity" in roles
+        assert "telemetry" in roles
+
+
+# --------------------------------------------------------------------
 # Determinism
 # --------------------------------------------------------------------
 

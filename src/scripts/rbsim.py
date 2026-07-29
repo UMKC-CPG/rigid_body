@@ -42,7 +42,7 @@ from rigid_body.render.palettes import (                     # noqa: E402
     select_palette, LIGHT_PALETTE)
 from rigid_body.render.vedo_renderer import VedoRenderer     # noqa: E402
 from rigid_body.ui.vedo_controls import (                    # noqa: E402
-    VedoControlsSource, AutoControlsSource)
+    VedoControlsSource, AutoControlsSource, control_legend_lines)
 from rigid_body.ui.interactive_session import (              # noqa: E402
     run_interactive_session)
 
@@ -136,7 +136,7 @@ def run_interactive_job(scenario_path, window_size=(1280, 960),
             presentation.palette if palette == "scenario" else palette)
         renderer = VedoRenderer(
             chosen_palette, layout=chosen_layout, size=window_size,
-            offscreen=offscreen)
+            offscreen=offscreen, legend_lines=control_legend_lines())
     if save_frames is not None:
         renderer = _FrameSavingRenderer(renderer, save_frames)
 

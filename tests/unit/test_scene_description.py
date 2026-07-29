@@ -156,6 +156,67 @@ def test_shared_arrows_carry_their_native_geometry():
 
 
 # --------------------------------------------------------------------
+# Display layers filter what is drawn (Section 15.7)
+# --------------------------------------------------------------------
+
+def test_no_visible_layers_argument_shows_everything():
+    # The default (and the batch tier) pass nothing and draw the full scene.
+    _body, _state, scene = torque_free_scene()
+    full = roles_of(scene)
+    assert {"body_mesh", "momental_ellipsoid", "polhode",
+            "angular_velocity", "body_triad", "telemetry"} <= full
+
+
+def test_hiding_the_ellipsoid_layer_drops_its_construction():
+    body = make_body(ASYMMETRIC_BOX)
+    state = st.State(IDENTITY_QUATERNION, TUMBLING_OMEGA)
+    monitor = ConservationMonitor(state, body, [])
+    scene = sd.build_scene(
+        state, body, monitor,
+        visible_layers=frozenset({"body", "vectors", "triads"}))
+    roles = roles_of(scene)
+    # The whole ellipsoid layer is gone...
+    assert not ({"momental_ellipsoid", "polhode", "invariable_plane",
+                 "herpolhode"} & roles)
+    # ...while the other layers and the always-on overlay remain.
+    assert {"body_mesh", "angular_velocity", "angular_momentum",
+            "body_triad", "lab_triad", "telemetry"} <= roles
+
+
+def test_hiding_the_body_layer_keeps_only_its_own_role_out():
+    body = make_body(ASYMMETRIC_BOX)
+    state = st.State(IDENTITY_QUATERNION, TUMBLING_OMEGA)
+    monitor = ConservationMonitor(state, body, [])
+    scene = sd.build_scene(
+        state, body, monitor,
+        visible_layers=frozenset({"ellipsoid", "vectors", "triads"}))
+    roles = roles_of(scene)
+    assert "body_mesh" not in roles
+    assert "momental_ellipsoid" in roles       # a different layer, still on
+
+
+def test_the_telemetry_overlay_survives_every_layer_being_off():
+    # The overlay is always-on chrome, not part of any toggleable layer.
+    body = make_body(ASYMMETRIC_BOX)
+    state = st.State(IDENTITY_QUATERNION, TUMBLING_OMEGA)
+    monitor = ConservationMonitor(state, body, [])
+    scene = sd.build_scene(
+        state, body, monitor, visible_layers=frozenset())
+    assert roles_of(scene) == {"telemetry"}
+
+
+def test_the_role_layer_map_covers_every_drawable_but_the_overlay():
+    # Every role a scene emits, except the always-on telemetry, maps to a
+    # layer -- so nothing is left unreachable by a toggle.
+    _body, _state, scene = torque_free_scene()
+    for drawable in scene.drawables:
+        if drawable.role == "telemetry":
+            assert drawable.role not in sd.LAYER_OF_ROLE
+        else:
+            assert drawable.role in sd.LAYER_OF_ROLE
+
+
+# --------------------------------------------------------------------
 # A moments-only body falls back to the ellipsoid proxy (Section 4)
 # --------------------------------------------------------------------
 

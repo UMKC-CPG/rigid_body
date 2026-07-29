@@ -4,10 +4,14 @@ This is the concrete :class:`~rigid_body.ui.interactive_session.ControlsSource`
 for the interactive tier -- the widget side of PSEUDOCODE Section 15.3. The
 frame loop calls ``read`` once per frame for a plain :class:`Controls`
 record, ``pump`` to process the window's events, and ``window_closed`` to
-learn when the viewer is done. Only the time controls are wired here (pause,
-single-step, slow, fast, normal, and quit); editing the scenario through the
-window -- which would build a new scenario (Section 15.4) -- is left for
-later, so ``pending_edit`` stays absent in this version.
+learn when the viewer is done. Two families of control are wired here: the
+time controls (pause, single-step, slow, fast, normal, and quit) and the
+display-layer toggles (Section 15.7) that switch the body, the ellipsoid
+and its construction, the vectors, and the axes on and off. The key
+reference the window shows is built by :func:`control_legend_lines`, kept
+beside the bindings so the two cannot drift. Editing the scenario through
+the window -- which would build a new scenario (Section 15.4) -- is left
+for later, so ``pending_edit`` stays absent in this version.
 
 The keystroke-to-state machine, :class:`KeyboardControlState`, is kept pure
 and free of any graphics library, so it is unit-tested without a window.
@@ -19,7 +23,8 @@ offscreen previews and headless tests.
 """
 
 from rigid_body.dynamics.time_control import (
-    Controls, ControlMode, Pace, pace_after_frame)
+    Controls, ControlMode, Pace, pace_after_frame,
+    DISPLAY_LAYERS, ALL_LAYERS_VISIBLE)
 
 
 # The keys each time control answers to. Several aliases map to one action
@@ -30,6 +35,12 @@ _SLOW_KEYS = {"minus", "underscore", "comma", ","}
 _FAST_KEYS = {"plus", "equal", "period", "."}
 _NORMAL_KEYS = {"n", "0"}
 _CLOSE_KEYS = {"q", "escape"}
+
+# The keys that toggle a display layer on or off (Section 15.7): one letter
+# per layer, chosen to be mnemonic -- b for the body, e for the ellipsoid
+# and its construction, v for the vectors, t for the triads (axes).
+_LAYER_TOGGLE_KEYS = {
+    "b": "body", "e": "ellipsoid", "v": "vectors", "t": "triads"}
 
 
 class KeyboardControlState:
@@ -46,6 +57,8 @@ class KeyboardControlState:
         self.nominal_substeps = nominal_substeps
         self.pace = Pace.NORMAL
         self.closed = False
+        # Every display layer starts switched on; a toggle key flips one.
+        self.visible_layers = set(DISPLAY_LAYERS)
 
     def handle_key(self, key):
         """Update the state from one pressed key (case-insensitive)."""
@@ -62,14 +75,24 @@ class KeyboardControlState:
             self.pace = Pace.FAST
         elif pressed in _NORMAL_KEYS:
             self.pace = Pace.NORMAL
+        elif pressed in _LAYER_TOGGLE_KEYS:
+            self._toggle_layer(_LAYER_TOGGLE_KEYS[pressed])
         elif pressed in _CLOSE_KEYS:
             self.closed = True
+
+    def _toggle_layer(self, layer):
+        """Switch a display layer on if it is off, or off if it is on."""
+        if layer in self.visible_layers:
+            self.visible_layers.discard(layer)
+        else:
+            self.visible_layers.add(layer)
 
     def snapshot(self):
         """Return the current controls as a plain :class:`Controls`."""
         return Controls(
             mode=ControlMode.LIVE, pace=self.pace,
-            nominal_substeps=self.nominal_substeps)
+            nominal_substeps=self.nominal_substeps,
+            visible_layers=frozenset(self.visible_layers))
 
     def advance_after_read(self):
         """Apply the once-per-frame pace transition after a read.
@@ -151,10 +174,27 @@ class AutoControlsSource:
         self.frames_read += 1
         return Controls(
             mode=ControlMode.LIVE, pace=Pace.NORMAL,
-            nominal_substeps=self.nominal_substeps)
+            nominal_substeps=self.nominal_substeps,
+            visible_layers=ALL_LAYERS_VISIBLE)
 
     def pump(self):
         """No window to pump."""
 
     def window_closed(self):
         return self.frames_read >= self.max_frames
+
+
+def control_legend_lines():
+    """Return the on-screen key reference for the live controls.
+
+    The keys a viewer can press and what each does, as a few short lines
+    the renderer draws in a corner of the window so the controls are
+    discoverable without a separate manual (the answer to "where are the
+    keys shown?"). It is static text -- the vocabulary is fixed at build
+    time -- and it lives here, beside the bindings, so the two cannot drift.
+    """
+    return [
+        "Keys",
+        "  space: pause/resume     s: single step",
+        "  -: slower   +: faster    n: normal   q: quit",
+        "  toggle   b: body   e: ellipsoid   v: vectors   t: axes"]

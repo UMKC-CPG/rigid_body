@@ -2712,6 +2712,8 @@ record Controls:
     scale_settings    # labeled exaggeration factors (§15.6)
     nominal_substeps  # scenario.fidelity.substeps_per_frame, carried so
                       # substeps_this_frame is a pure function of controls
+    visible_layers    # the display layers switched on (§15.7); filters
+                      # what is drawn, never the state
 
 function read_controls():
     # ui/ reads downward only (§15.2). A plain-data snapshot, no channel
@@ -2721,7 +2723,8 @@ function read_controls():
              replay_cursor    = current_replay_cursor(),
              pending_edit     = current_pending_edit(),
              scale_settings   = current_scale_settings(),
-             nominal_substeps = scenario.fidelity.substeps_per_frame }
+             nominal_substeps = scenario.fidelity.substeps_per_frame,
+             visible_layers   = current_visible_layers() }
 
 function substeps_this_frame(controls):
     # Map the time control onto a SUBSTEP COUNT, never onto dt (§15.1,
@@ -2794,6 +2797,54 @@ drift does (§8) — so the scaling controls here and the labels of §14.5 are
 two views of one requirement, the last place in the tool where Principle 2's
 discipline, that nothing false is shown as physics, reaches the student's
 hand.
+
+### 15.7 Choosing what is drawn: display layers
+
+The two-panel Poinsot view is dense — the object, the momental ellipsoid,
+the polhode and herpolhode, the invariable plane, the two shared vectors,
+and two labeled triads, all at once (§14.2). A student following one idea
+wants to set the rest aside: watch the bare object tumble, or hide the body
+and study only the rolling ellipsoid. So the drawables are grouped into a
+few **display layers** a viewer switches on and off.
+
+Four layers cover the scene: `body` (the rigid object), `ellipsoid` (the
+momental ellipsoid and its whole construction — polhode, herpolhode,
+invariable plane), `vectors` (`omega` and `L`), and `triads` (the body and
+lab axes). The telemetry overlay is not in any layer; it is always-on
+chrome, since hiding the conservation readout is never what a viewer wants
+and §8 insists it stay in view.
+
+```
+DISPLAY_LAYERS = { body, ellipsoid, vectors, triads }
+LAYER_OF_ROLE  = { body_mesh: body,
+                   momental_ellipsoid: ellipsoid, polhode: ellipsoid,
+                   invariable_plane: ellipsoid, herpolhode: ellipsoid,
+                   angular_velocity: vectors, angular_momentum: vectors,
+                   body_triad: triads, lab_triad: triads }
+                   # telemetry maps to no layer: always-on chrome
+
+function visible_only(drawables, visible_layers):
+    # visible_layers = none means draw everything (the batch tier, and any
+    # caller that does not toggle). A drawable with no layer is never hidden.
+    if visible_layers is none: return drawables
+    return [ d for d in drawables
+             if LAYER_OF_ROLE.get(d.role) is none
+             or LAYER_OF_ROLE[d.role] in visible_layers ]
+```
+
+`build_scene` (§14.2) applies `visible_only` to its inventory before
+returning, so a switched-off layer never reaches the renderer. The switch
+lives on the read-only control record (`visible_layers`, §15.3): toggling a
+layer changes only *what is drawn*, reading no state, so it cannot perturb
+the trajectory (§15.2, Principle 9) — the same read-only discipline the
+pace controls obey. This is the interface answer to Goal 5's density: the
+comparison is available in full, and also decomposable one layer at a time.
+
+The live window binds one mnemonic key to each layer — `b`, `e`, `v`, `t` —
+alongside the time-control keys, and draws a small **key legend** in a
+corner so the whole vocabulary is discoverable without a manual. The legend
+is static text produced beside the bindings, so the keys shown can never
+drift from the keys honored.
 
 ---
 

@@ -84,9 +84,14 @@ class VedoRenderer:
     """
 
     def __init__(self, palette, layout="side_by_side", size=(1280, 960),
-                 offscreen=False, background=None):
+                 offscreen=False, background=None, legend_lines=None):
         self.palette = palette
         self.layout = layout
+        # An optional static key reference drawn in a corner so the live
+        # controls are discoverable (Section 15.7). Plain strings supplied
+        # by the caller; the renderer only draws them, and knows nothing of
+        # what the keys mean, keeping the control vocabulary in ui/.
+        self.legend_lines = legend_lines
         # The window color: the palette's own field unless overridden, so a
         # scheme's inks always land on the background they were chosen for
         # and never vanish into a mismatched one (a viewer's report).
@@ -119,6 +124,10 @@ class VedoRenderer:
             actors = self._build_panel_actors(
                 scene, state, view_frame, rotation)
             actors.append(_panel_title_actor(view_frame))
+            # The key reference rides in the first panel's corner only, so
+            # it is shown once rather than duplicated across panels.
+            if panel_index == 0 and self.legend_lines:
+                actors.append(_legend_actor(self.legend_lines))
             panel = self.plotter.at(panel_index)
             panel.remove(self._panel_actors[panel_index])
             panel.add(actors)
@@ -428,6 +437,17 @@ def _panel_title_actor(view_frame):
     """
     name = "Body frame" if view_frame is Frame.BODY else "Space frame"
     return vedo.Text2D(name, pos="top-right", s=1.0)
+
+
+def _legend_actor(lines):
+    """Build the static key-reference overlay in the bottom-left corner.
+
+    The window's own answer to "where are the keys shown?" (Section 15.7):
+    a few lines of fixed text naming each control, drawn low in the first
+    panel so it is always in view without crowding the telemetry readout at
+    the top-left or the frame title at the top-right.
+    """
+    return vedo.Text2D("\n".join(lines), pos="bottom-left", s=0.75)
 
 
 def _format_telemetry(readout):

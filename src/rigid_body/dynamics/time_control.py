@@ -33,6 +33,22 @@ SLOW_FACTOR = 4
 FAST_FACTOR = 4
 
 
+# The display layers a viewer can switch on and off (Section 15.7). Each
+# names a group of drawables the scene can carry: the rigid body itself,
+# the momental ellipsoid and its Poinsot construction, the shared vectors
+# omega and L, and the coordinate triads. A layer being off simply drops
+# its drawables from the scene; nothing about the physics changes, so this
+# is presentation state on the read-only control record, never a channel
+# into the seven-number state (Section 15.2). The canonical names live here
+# because the ``Controls`` record carries the visible set; ``render/`` maps
+# each drawable role onto one of these layers.
+DISPLAY_LAYERS = ("body", "ellipsoid", "vectors", "triads")
+
+# The default: everything visible. A frozenset so it is safe to share as a
+# field default without a factory (it can never be mutated in place).
+ALL_LAYERS_VISIBLE = frozenset(DISPLAY_LAYERS)
+
+
 class ControlMode(Enum):
     """Whether the loop is advancing the physics or replaying history.
 
@@ -74,7 +90,9 @@ class Controls:
     ``nominal_substeps`` is carried on the record -- copied from
     ``scenario.fidelity.substeps_per_frame`` -- so that
     ``substeps_this_frame`` is a pure function of the controls alone, with
-    nothing to look up elsewhere.
+    nothing to look up elsewhere. ``visible_layers`` is the set of display
+    layers currently switched on (Section 15.7); it filters *what is drawn*
+    and touches no state, so it too rides on the read-only record.
     """
 
     mode: ControlMode = ControlMode.LIVE
@@ -83,6 +101,7 @@ class Controls:
     pending_edit: Optional[dict] = None
     scale_settings: dict = field(default_factory=dict)
     nominal_substeps: int = 1
+    visible_layers: frozenset = ALL_LAYERS_VISIBLE
 
 
 def default_controls(scenario):
@@ -98,7 +117,8 @@ def default_controls(scenario):
         replay_cursor=None,
         pending_edit=None,
         scale_settings={},
-        nominal_substeps=scenario.fidelity.substeps_per_frame)
+        nominal_substeps=scenario.fidelity.substeps_per_frame,
+        visible_layers=ALL_LAYERS_VISIBLE)
 
 
 def substeps_this_frame(controls):

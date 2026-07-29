@@ -30,6 +30,7 @@ import numpy as np
 from rigid_body.core.orientation import euler_angles_from_quaternion
 from rigid_body.dynamics.state import (
     angular_momentum_space, kinetic_energy)
+from rigid_body.dynamics.time_control import DISPLAY_LAYERS
 from rigid_body.geometry.reference_frames import Frame
 from rigid_body.geometry.poinsot import (
     momental_ellipsoid, invariable_plane, polhode, herpolhode_point,
@@ -44,6 +45,27 @@ POLHODE_SAMPLE_COUNT = 240
 # The laboratory triad: the space axes X, Y, Z as the identity frame, drawn
 # in the space panel (PSEUDOCODE Section 14.2).
 LABORATORY_AXES = np.eye(3)
+
+
+# Which display layer each drawable role belongs to (PSEUDOCODE Section
+# 15.7). A viewer toggles whole layers; this map turns a layer switch into
+# the set of roles to keep or drop. The telemetry overlay is deliberately
+# absent -- it is always-on chrome, never part of a toggleable layer.
+LAYER_OF_ROLE = {
+    "body_mesh": "body",
+    "momental_ellipsoid": "ellipsoid",
+    "polhode": "ellipsoid",
+    "invariable_plane": "ellipsoid",
+    "herpolhode": "ellipsoid",
+    "angular_velocity": "vectors",
+    "angular_momentum": "vectors",
+    "body_triad": "triads",
+    "lab_triad": "triads"}
+
+# The layers named here and the canonical list the control record carries
+# must agree, or a toggle could never reach a role. Checked at import so a
+# rename in one place cannot silently drift from the other.
+assert set(LAYER_OF_ROLE.values()) == set(DISPLAY_LAYERS)
 
 
 class DrawablePanel(Enum):
@@ -193,7 +215,8 @@ class Scene(NamedTuple):
 
 
 def build_scene(state, body, monitor, presentation=None, report=None,
-                time_ratio=None, polhode_sample_count=POLHODE_SAMPLE_COUNT):
+                time_ratio=None, polhode_sample_count=POLHODE_SAMPLE_COUNT,
+                visible_layers=None):
     """Assemble the scene inventory for one frame from computed quantities.
 
     Called by the interactive loop each frame (PSEUDOCODE Section 1.2). It
@@ -202,6 +225,13 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     included exactly when the monitor's torque list is empty. Every
     drawable stands for a named physical quantity a student can trace to
     the equations; nothing decorative is added (VISION Principle 5).
+
+    ``visible_layers`` is the set of display layers currently switched on
+    (Section 15.7), or ``None`` to draw everything -- the default the batch
+    tier and any non-toggling caller use. Layers switched off drop their
+    drawables from the returned scene; the always-on telemetry overlay is
+    never filtered. Filtering only chooses *what is drawn* and reads no
+    state, so it cannot disturb the physics (VISION Principle 9).
     """
     drawables = []
 
@@ -273,7 +303,24 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     drawables.append(telemetry_overlay(
         monitor, state, body, report=report, time_ratio=time_ratio))
 
-    return Scene(drawables=drawables)
+    return Scene(drawables=_visible_only(drawables, visible_layers))
+
+
+def _visible_only(drawables, visible_layers):
+    """Drop drawables whose display layer is switched off (Section 15.7).
+
+    ``visible_layers`` is the set of layers currently on, or ``None`` to
+    show everything. A drawable whose role maps to no layer -- the
+    telemetry overlay -- is always-on chrome and is never filtered.
+    """
+    if visible_layers is None:
+        return drawables
+    kept = []
+    for drawable in drawables:
+        layer = LAYER_OF_ROLE.get(drawable.role)
+        if layer is None or layer in visible_layers:
+            kept.append(drawable)
+    return kept
 
 
 def _is_torque_free(monitor):

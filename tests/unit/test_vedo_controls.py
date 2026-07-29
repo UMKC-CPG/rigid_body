@@ -5,9 +5,10 @@ the whole control vocabulary is exercised here by feeding it key names -- no
 window required.
 """
 
-from rigid_body.dynamics.time_control import ControlMode, Pace
+from rigid_body.dynamics.time_control import (
+    ControlMode, Pace, DISPLAY_LAYERS, ALL_LAYERS_VISIBLE)
 from rigid_body.ui.vedo_controls import (
-    KeyboardControlState, AutoControlsSource)
+    KeyboardControlState, AutoControlsSource, control_legend_lines)
 
 
 # --------------------------------------------------------------------
@@ -73,6 +74,71 @@ def test_snapshot_is_a_complete_live_control():
     assert controls.pace is Pace.SLOW
     assert controls.nominal_substeps == 7
     assert controls.pending_edit is None
+    # Untouched, every layer is visible.
+    assert controls.visible_layers == ALL_LAYERS_VISIBLE
+
+
+# --------------------------------------------------------------------
+# The display-layer toggles (Section 15.7)
+# --------------------------------------------------------------------
+
+def test_every_layer_starts_visible():
+    state = KeyboardControlState(nominal_substeps=10)
+    assert state.visible_layers == set(DISPLAY_LAYERS)
+
+
+def test_a_toggle_key_switches_one_layer_off_then_on():
+    state = KeyboardControlState(nominal_substeps=10)
+    # 'e' toggles the ellipsoid layer; the others are untouched.
+    state.handle_key("e")
+    assert "ellipsoid" not in state.visible_layers
+    assert {"body", "vectors", "triads"} <= state.visible_layers
+    # Pressing it again brings the layer back.
+    state.handle_key("e")
+    assert "ellipsoid" in state.visible_layers
+
+
+def test_each_layer_key_maps_to_its_own_group():
+    for key, layer in (("b", "body"), ("e", "ellipsoid"),
+                       ("v", "vectors"), ("t", "triads")):
+        state = KeyboardControlState(nominal_substeps=10)
+        state.handle_key(key)
+        assert layer not in state.visible_layers
+        # Only that one layer was removed.
+        assert state.visible_layers == set(DISPLAY_LAYERS) - {layer}
+
+
+def test_toggling_a_layer_is_carried_on_the_snapshot():
+    state = KeyboardControlState(nominal_substeps=10)
+    state.handle_key("b")                      # hide the body object
+    controls = state.snapshot()
+    assert "body" not in controls.visible_layers
+    assert isinstance(controls.visible_layers, frozenset)
+
+
+def test_a_layer_key_leaves_the_pace_alone():
+    # Toggling visibility is orthogonal to the time controls.
+    state = KeyboardControlState(nominal_substeps=10)
+    state.handle_key("minus")                  # slow motion
+    state.handle_key("v")                      # hide the vectors
+    assert state.pace is Pace.SLOW
+    assert "vectors" not in state.visible_layers
+
+
+# --------------------------------------------------------------------
+# The on-screen key legend
+# --------------------------------------------------------------------
+
+def test_the_legend_names_every_control_key():
+    legend = "\n".join(control_legend_lines()).lower()
+    # The time controls are all documented.
+    for token in ("space", "pause", "step", "quit"):
+        assert token in legend
+    # And the toggles: the word "toggle" plus each layer's own name, so a
+    # viewer can see what b/e/v/t switch without guessing.
+    assert "toggle" in legend
+    for layer_word in ("body", "ellipsoid", "vectors", "axes"):
+        assert layer_word in legend
 
 
 # --------------------------------------------------------------------

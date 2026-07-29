@@ -224,3 +224,28 @@ def test_replay_is_read_only_across_the_window_and_the_deep_past():
         second, _ = tc.replay_state_at(trajectory, keyframes, target_time)
         np.testing.assert_array_equal(
             first.angular_velocity_body, second.angular_velocity_body)
+
+
+# --------------------------------------------------------------------
+# Display layers on the control record (Section 15.7)
+# --------------------------------------------------------------------
+
+def test_controls_default_to_every_layer_visible():
+    # A bare control record shows everything; toggling only ever removes.
+    controls = tc.Controls()
+    assert controls.visible_layers == tc.ALL_LAYERS_VISIBLE
+    assert set(controls.visible_layers) == set(tc.DISPLAY_LAYERS)
+
+
+def test_default_controls_carry_all_layers_from_a_scenario():
+    scenario = SimpleNamespace(
+        fidelity=SimpleNamespace(substeps_per_frame=6))
+    controls = tc.default_controls(scenario)
+    assert controls.visible_layers == tc.ALL_LAYERS_VISIBLE
+
+
+def test_the_layer_names_are_the_four_expected_groups():
+    # The vocabulary render/ maps roles onto and ui/ toggles: the body, the
+    # ellipsoid and its construction, the shared vectors, and the triads.
+    assert set(tc.DISPLAY_LAYERS) == {
+        "body", "ellipsoid", "vectors", "triads"}

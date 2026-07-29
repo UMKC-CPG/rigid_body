@@ -88,8 +88,12 @@ python src/scripts/rbsim.py scenarios/dzhanibekov.toml
 ```
 
 Controls: **space** pauses and resumes, **s** single-steps, **-** slows,
-**+** speeds up, **n** returns to normal speed, **q** quits. Rendering is
-in **software**; no GPU is required.
+**+** speeds up, **n** returns to normal speed, **q** quits. Toggle what is
+drawn to cut the clutter: **b** the body object, **e** the momental
+ellipsoid and its construction, **v** the ω/L vectors, **t** the axis
+triads. The full key reference is drawn in the window's bottom-left corner,
+so nothing needs memorizing. Rendering is in **software**; no GPU is
+required.
 
 > **A live window needs a real desktop session on the cluster** — a VNC
 > or Open OnDemand desktop. **Plain SSH X11 forwarding (including MoTTY /

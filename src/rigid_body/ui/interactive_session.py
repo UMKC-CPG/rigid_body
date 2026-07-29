@@ -122,7 +122,8 @@ def run_interactive(scenario, renderer, controls_source, sinks=None,
             time, start_wall_time, wall_clock)
         scene = build_scene(
             state, body, monitor, presentation=presentation,
-            report=latest_report, time_ratio=time_ratio)
+            report=latest_report, time_ratio=time_ratio,
+            visible_layers=controls.visible_layers)
         renderer.render(scene, state)
 
         controls_source.pump()
