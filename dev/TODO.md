@@ -490,15 +490,39 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       Verified end to end: `rbsim spin.toml --offscreen --frames N` renders
       the two-frame view (drift ~1e-14). 284 total. **The interactive tier
       is now runnable from the command line.**
-- [ ] Deferred interactive refinements (functional but rough, observed in an
-      rbsim frame-30 screenshot): per-panel camera framing -- the camera
-      resets only on the first frame, so as the body tumbles and the omega/L
-      arrows move, the body panel zooms/clips; needs a per-panel reframe that
-      still respects the viewer's own camera moves (§11.6). Also the
-      herpolhode swept trail + bounding band (now feasible with the driver
-      feeding frames), true Platonic body meshes, live scenario editing
-      through the UI (currently pending_edit stays None -- time controls
-      only), and window-X close detection (v1 quits on 'q'/Escape).
+- [x] Live-legibility pass (viewer reports from the first Open OnDemand
+      run). PRESENTATION only, no physics: per-panel camera framing (each
+      panel resets to its own contents on the first frame, so the body
+      panel no longer starts inside the ellipsoid); on-screen labels
+      realized from each drawable's label (omega/L at the tips, triad arms
+      tagged 1/2/3 and X/Y/Z); panel titles ("Body frame"/"Space frame");
+      palette-coherent background (the background now travels with the
+      palette, so the light scheme's dark inks no longer draw on black);
+      coarser ellipsoid wireframe (res 32 -> 12) at a touch more opacity.
+      285 total.
+- [x] Rolling ellipsoid in the space panel (§11.5). The body-anchored
+      drawables (object, ellipsoid, polhode, body axes) were panel = BODY,
+      where the body frame is held still -- so a viewer never saw them
+      move, though §11.5 has always specified the ellipsoid rolling on the
+      invariable plane in the space view. Made them panel = BOTH: still on
+      the left, rolling on the right. Aligned the §14.2 build_scene spec
+      (which contradicted §11.5) and the panel test. 285 total.
+- [x] Display-layer toggles + on-screen key legend (new PSEUDOCODE §15.7).
+      Four layers (body; ellipsoid + construction; vectors; triads) toggled
+      by b/e/v/t; visible_layers on the read-only Controls record; build_scene
+      filters its inventory (None = draw all, the batch tier); the telemetry
+      overlay is always-on chrome in no layer. control_legend_lines() drawn
+      in the window corner so the keys are discoverable. 15 new tests, 300
+      total.
+- [ ] Deferred interactive refinements: the herpolhode swept trail +
+      bounding band (now feasible with the driver feeding frames), true
+      Platonic body meshes, live scenario editing through the UI (currently
+      pending_edit stays None -- time and layer controls only), window-X
+      close detection (v1 quits on 'q'/Escape), and a live on/off marker in
+      the key legend (currently a static reference; the toggle's effect is
+      seen in the scene itself). Also worth revisiting: the body mesh is
+      tiny inside the momental ellipsoid at the shared scale -- the toggles
+      relieve it, but a per-layer display scale (§14.5) could show both.
 
 ---
 
