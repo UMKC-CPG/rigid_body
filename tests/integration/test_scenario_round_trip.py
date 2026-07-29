@@ -128,6 +128,37 @@ def test_round_trip_preserves_resolved_and_authored(tmp_path):
         loaded.torque_models[0].resolved["gravity"], [0.0, 0.0, -9.81])
 
 
+def test_reloaded_run_body_carries_its_shape_for_drawing(tmp_path):
+    # The dynamics run on the recorded tensor, but the renderer needs the
+    # shape to draw the object (DESIGN 11.3). A reloaded shape body must
+    # therefore carry its geometry, or the object is never drawn -- while
+    # the resolved tensor it runs on is unchanged.
+    scenario = make_scenario()
+    path = tmp_path / "scenario.toml"
+    save_scenario(scenario, path)
+    loaded = load_scenario(path)
+    body = _rigid_body_from_resolved(loaded.body)
+    assert body.geometry is not None
+    np.testing.assert_allclose(
+        body.principal_moments, loaded.body.resolved.principal_moments)
+
+
+def test_reloaded_moments_only_body_has_no_shape(tmp_path):
+    # A body given by moments alone has no shape; its ellipsoid is the proxy.
+    specification = BodySpecification(
+        kind="moments",
+        dimensions={"moments": ["2 kg*m^2", "3 kg*m^2", "4 kg*m^2"],
+                    "mass": "1.5 kg"})
+    record = build_body_from_specification(specification)
+    resolved = BodyResolved(
+        total_mass=record.total_mass,
+        center_of_mass=record.center_of_mass,
+        principal_moments=record.principal_moments,
+        principal_axes=record.principal_axes)
+    body = Body(specification=specification, resolved=resolved)
+    assert _rigid_body_from_resolved(body).geometry is None
+
+
 def test_consistency_check_catches_a_tampered_body(tmp_path):
     scenario = make_scenario()
     scenario.body.resolved.principal_moments = (

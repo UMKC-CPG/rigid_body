@@ -136,10 +136,16 @@ def build_body_from_specification(specification):
 
 
 def _rigid_body_from_resolved(body):
-    """Reconstruct the RigidBody the dynamics consume from the summary.
+    """Reconstruct the RigidBody both consumers need from a scenario body.
 
-    The dynamics saw only the tensor, so the recorded tensor is what
-    reproduces the run (DESIGN Section 11.3), whatever method produced it.
+    Two consumers read a body, and each gets what it needs (DESIGN Section
+    11.3): the **dynamics** run on the recorded resolved tensor -- the mass,
+    center of mass, principal moments, and axes -- so the recorded tensor is
+    what reproduces the run, whatever method produced it. The **renderer**
+    needs the body's shape to draw the object, which the specification
+    carries; that shape is rebuilt here and attached as ``geometry``. The
+    shape is never read by the dynamics, so attaching it draws the object
+    without touching what the physics computes (determinism is untouched).
     """
     moments = np.asarray(body.resolved.principal_moments, dtype=float)
     top_class, intermediate_axis = classify_top(moments)
@@ -152,7 +158,25 @@ def _rigid_body_from_resolved(body):
                                   dtype=float),
         top_class=top_class,
         intermediate_axis=intermediate_axis,
-        geometry=None)
+        geometry=_shape_from_specification(body.specification))
+
+
+def _shape_from_specification(specification):
+    """Rebuild the drawable shape a specification names, or None.
+
+    The renderer draws the body's actual shape (DESIGN Section 11.3), so the
+    run body carries it as ``geometry``. A body given by moments alone
+    (Section 3.6) has no shape and returns None -- its momental ellipsoid
+    stands in as the visual proxy. This reads only the specification's shape
+    and dimensions; it never consults the resolved tensor, and the shape it
+    returns is for drawing only.
+    """
+    if specification.kind == "moments":
+        return None
+    resolved_dimensions = _resolve_named(
+        specification.dimensions,
+        _SHAPE_DIMENSION_UNITS[specification.kind])
+    return _construct_shape(specification.kind, resolved_dimensions)
 
 
 def _check_body_consistency(body):
