@@ -209,9 +209,18 @@ def telemetry_overlay(monitor, state, body, report=None,
 # --------------------------------------------------------------------
 
 class Scene(NamedTuple):
-    """The renderer-agnostic inventory of drawables for one frame."""
+    """The renderer-agnostic inventory of drawables for one frame.
+
+    ``reference_scale`` is the scene's display size -- the momental
+    ellipsoid's largest semi-axis -- carried on the scene so the renderer
+    sizes the vectors, triads, and object against a stable value even when
+    the ellipsoid layer is toggled off and its drawable is absent (Section
+    15.7). It depends only on the body's moments, so it is constant for a
+    given body.
+    """
 
     drawables: list
+    reference_scale: float = 1.0
 
 
 def build_scene(state, body, monitor, presentation=None, report=None,
@@ -247,10 +256,15 @@ def build_scene(state, body, monitor, presentation=None, report=None,
         drawables.append(Drawable(
             geometry=body.geometry, role="body_mesh",
             panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
-            label="rigid body"))
+            label="rigid body",
+            scale_note="object shown enlarged for visibility, not to "
+                       "scale with the ellipsoid"))
 
+    ellipsoid = momental_ellipsoid(body)
+    reference_scale = float(np.max(np.asarray(
+        ellipsoid.semi_axes, dtype=float)))
     drawables.append(Drawable(
-        geometry=momental_ellipsoid(body), role="momental_ellipsoid",
+        geometry=ellipsoid, role="momental_ellipsoid",
         panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
         label="momental ellipsoid",
         scale_note=ellipsoid_scale_label(presentation)))
@@ -303,7 +317,9 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     drawables.append(telemetry_overlay(
         monitor, state, body, report=report, time_ratio=time_ratio))
 
-    return Scene(drawables=_visible_only(drawables, visible_layers))
+    return Scene(
+        drawables=_visible_only(drawables, visible_layers),
+        reference_scale=reference_scale)
 
 
 def _visible_only(drawables, visible_layers):

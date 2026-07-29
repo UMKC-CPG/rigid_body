@@ -217,6 +217,42 @@ def test_the_role_layer_map_covers_every_drawable_but_the_overlay():
 
 
 # --------------------------------------------------------------------
+# The reference scale and the object's per-layer display scale (14.5)
+# --------------------------------------------------------------------
+
+def test_scene_reference_scale_is_the_ellipsoid_max_semi_axis():
+    _body, _state, scene = torque_free_scene()
+    ellipsoid = drawable_named(scene, "momental_ellipsoid")
+    expected = float(np.max(ellipsoid.geometry.semi_axes))
+    assert scene.reference_scale == pytest.approx(expected)
+    assert scene.reference_scale > 0.0
+
+
+def test_reference_scale_survives_hiding_the_ellipsoid_layer():
+    # The scene carries the reference size so it stays fixed even when the
+    # ellipsoid drawable is filtered out -- otherwise the object and arrows
+    # would jump in size the moment the ellipsoid is toggled off.
+    body = make_body(ASYMMETRIC_BOX)
+    state = st.State(IDENTITY_QUATERNION, TUMBLING_OMEGA)
+    monitor = ConservationMonitor(state, body, [])
+    full = sd.build_scene(state, body, monitor)
+    hidden = sd.build_scene(
+        state, body, monitor,
+        visible_layers=frozenset({"body", "vectors", "triads"}))
+    assert "momental_ellipsoid" not in roles_of(hidden)
+    assert hidden.reference_scale == pytest.approx(full.reference_scale)
+
+
+def test_the_object_states_it_is_not_to_scale():
+    # The object and the ellipsoid share no physical scale, so the object's
+    # display size is a labeled choice (Principle 12): it says so.
+    _body, _state, scene = torque_free_scene()
+    body_mesh = drawable_named(scene, "body_mesh")
+    assert body_mesh.scale_note is not None
+    assert "scale" in body_mesh.scale_note.lower()
+
+
+# --------------------------------------------------------------------
 # A moments-only body falls back to the ellipsoid proxy (Section 4)
 # --------------------------------------------------------------------
 

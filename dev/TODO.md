@@ -514,15 +514,30 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       overlay is always-on chrome in no layer. control_legend_lines() drawn
       in the window corner so the keys are discoverable. 15 new tests, 300
       total.
-- [ ] Deferred interactive refinements: the herpolhode swept trail +
-      bounding band (now feasible with the driver feeding frames), true
-      Platonic body meshes, live scenario editing through the UI (currently
-      pending_edit stays None -- time and layer controls only), window-X
-      close detection (v1 quits on 'q'/Escape), and a live on/off marker in
-      the key legend (currently a static reference; the toggle's effect is
-      seen in the scene itself). Also worth revisiting: the body mesh is
-      tiny inside the momental ellipsoid at the shared scale -- the toggles
-      relieve it, but a per-layer display scale (§14.5) could show both.
+- [x] Per-layer display scale + ellipsoid ring cage (viewer reports).
+      PRESENTATION only. The object and the momental ellipsoid live in
+      different spaces (metres vs 1/sqrt(I)) with no common scale, so the
+      object was a speck inside the ellipsoid; it is now drawn at a
+      per-layer display scale (largest half-extent = 0.7x the reference
+      size), uniform so its shape is exact, with an honest "not to scale"
+      scale_note (§14.5). The reference size moved onto the Scene so it is
+      stable when the ellipsoid layer is toggled off. The ellipsoid is now
+      a latitude/longitude ring cage (parallels + meridians) rather than a
+      triangulated wireframe, so the diagonals no longer clutter the shape
+      and the object shows through. 5 new tests (ring points lie on the
+      surface and split by kind; the body scales to the display fraction
+      keeping its edge ratios; the reference scale survives hiding the
+      ellipsoid; the object states it is not to scale). 305 total.
+- [ ] Deferred interactive refinements: surfacing the scale_notes on screen
+      (the object's "not to scale" and the ellipsoid's inertia/energy note
+      are carried in data per §14.5 but not yet drawn -- the honest
+      on-screen footnote Principle 12 ultimately wants); the herpolhode
+      swept trail + bounding band (now feasible with the driver feeding
+      frames); true Platonic body meshes; live scenario editing through the
+      UI (currently pending_edit stays None -- time and layer controls
+      only); window-X close detection (v1 quits on 'q'/Escape); and a live
+      on/off marker in the key legend (currently a static reference; the
+      toggle's effect is seen in the scene itself).
 
 ---
 

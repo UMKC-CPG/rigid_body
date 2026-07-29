@@ -2625,6 +2625,20 @@ such as the internal-dissipation state modifier of §6.5, which is not a
 torque and must not be dressed as ordinary physics. The scene carries these
 labels as first-class text, not as chrome a palette could hide.
 
+One such choice is forced by the two-frame overlay itself: the rigid
+**object** lives in physical space (metres) while the momental ellipsoid
+lives in the angular-velocity space of `1/sqrt(I)`, and the two share no
+physical scale. Their relative on-screen size is therefore a per-layer
+**display scale**, not a physical fact: the object is drawn at a fixed
+fraction of the ellipsoid's reference size so both are visible together
+(§15.7 lets a viewer also hide either layer). The scale is uniform, so the
+object's *shape* is exact — only its overall size is a display choice — and
+the object carries the honest `scale_note` that it is not to scale with the
+ellipsoid. The `vectors` and `triads` layers are likewise sized against the
+same reference; only the ellipsoid and its own construction are drawn at
+their true angular-velocity-space magnitudes, since those carry the Poinsot
+geometry the tool exists to show.
+
 ### 14.6 The overlay, and what the batch tier draws instead
 
 The telemetry overlay is the on-screen face of the monitor (§8): the energy

@@ -27,7 +27,10 @@ from rigid_body.core import orientation as ori
 from rigid_body.analysis.conservation_monitor import ConservationMonitor
 from rigid_body.render import scene_description as sd
 from rigid_body.render import palettes as pal
-from rigid_body.render.vedo_renderer import VedoRenderer
+from rigid_body.render.vedo_renderer import (
+    VedoRenderer, _ellipsoid_ring_points, _scale_to_display_size,
+    _ELLIPSOID_PARALLEL_COUNT, _ELLIPSOID_MERIDIAN_COUNT,
+    _BODY_DISPLAY_FRACTION)
 
 
 def make_body(shape, density=1000.0):
@@ -96,6 +99,39 @@ def render_to_array(scene, state, palette, layout):
     if image is None or image.size == 0:            # pragma: no cover
         pytest.skip("offscreen framebuffer was empty (no GL context)")
     return image
+
+
+# --------------------------------------------------------------------
+# The ellipsoid ring cage and the object's display scale (pure geometry,
+# no GL context needed)
+# --------------------------------------------------------------------
+
+def test_ellipsoid_rings_lie_on_the_surface_and_split_by_kind():
+    semi = np.array([2.0, 3.0, 1.5])
+    rings = list(_ellipsoid_ring_points(semi))
+    closed_flags = [closed for _points, closed in rings]
+    # Parallels are closed circles; meridians are open pole-to-pole arcs.
+    assert closed_flags.count(True) == _ELLIPSOID_PARALLEL_COUNT
+    assert closed_flags.count(False) == _ELLIPSOID_MERIDIAN_COUNT
+    # Every ring point lies on the ellipsoid: (x/a)^2 + (y/b)^2 + (z/c)^2 = 1.
+    for points, _closed in rings:
+        residual = ((points / semi) ** 2).sum(axis=1)
+        np.testing.assert_allclose(residual, 1.0, atol=1e-9)
+
+
+def test_the_body_mesh_scales_to_the_display_fraction():
+    # A tiny box is enlarged so its largest half-extent is the display
+    # fraction of the reference size, and its shape (edge ratios) is kept.
+    box = vedo.Box(length=0.1, width=0.15, height=0.3)
+    _scale_to_display_size(box, reference_scale=4.0)
+    bounds = box.bounds()
+    extents = (bounds[1] - bounds[0], bounds[3] - bounds[2],
+               bounds[5] - bounds[4])
+    half_extent = 0.5 * max(extents)
+    assert half_extent == pytest.approx(_BODY_DISPLAY_FRACTION * 4.0)
+    # Edge ratios are preserved (uniform scale): 0.1 : 0.15 : 0.3.
+    np.testing.assert_allclose(
+        np.array(extents) / max(extents), [1 / 3, 1 / 2, 1.0], atol=1e-6)
 
 
 # --------------------------------------------------------------------

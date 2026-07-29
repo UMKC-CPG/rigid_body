@@ -54,10 +54,25 @@ _STIPPLE_PATTERNS = {
 _OMEGA_ARROW_LENGTH = 1.25
 _MOMENTUM_ARROW_LENGTH = 1.5
 
-# The wireframe resolution of the momental ellipsoid. A coarse mesh reads
-# as a clean surface; a fine one turns to visual noise (a viewer's report),
-# so the ellipsoid is drawn far coarser than the solid body meshes.
-_ELLIPSOID_MESH_RESOLUTION = 12
+# The momental ellipsoid is drawn as a cage of latitude and longitude rings
+# -- a "globe" wireframe -- rather than a triangulated surface, because the
+# triangulation's diagonals clutter the shape and blur the 3D sense (a
+# viewer's report). A few clean circles read the surface better and let the
+# object nested inside it show through. These set how many rings and how
+# smoothly each is sampled.
+_ELLIPSOID_PARALLEL_COUNT = 5      # latitude circles between the poles
+_ELLIPSOID_MERIDIAN_COUNT = 8      # longitude arcs from pole to pole
+_ELLIPSOID_RING_SAMPLES = 64       # points per ring, for a smooth curve
+
+# The body object lives in physical space (metres) while the momental
+# ellipsoid lives in the angular-velocity space of 1/sqrt(I); there is no
+# physical common scale between them, so the object's on-screen size is a
+# presentation choice (Section 14.5). It is drawn so its largest half-extent
+# is this fraction of the ellipsoid's reference size, which keeps the object
+# visible inside its momental ellipsoid whatever the units. The scale is
+# uniform, so the object's shape is preserved exactly -- only its overall
+# size is set for display, which the scene states (the body scale_note).
+_BODY_DISPLAY_FRACTION = 0.7
 
 # On-screen 3D text: the label size as a fraction of the scene's reference
 # size, and how far past an arrow tip its name is set so it clears the head.
@@ -157,7 +172,12 @@ class VedoRenderer:
 
     def _build_panel_actors(self, scene, state, view_frame, rotation):
         """Return the vedo actors for one panel's held-still frame."""
-        reference_scale = _reference_scale(scene)
+        # The scene carries the reference size (from the ellipsoid's
+        # semi-axes) so it stays fixed even when the ellipsoid layer is
+        # toggled off; older scenes without it fall back to a scan.
+        reference_scale = getattr(scene, "reference_scale", None)
+        if not reference_scale:
+            reference_scale = _reference_scale(scene)
         actors = []
         for drawable in scene.drawables:
             if not _drawable_in_panel(drawable, view_frame):
@@ -175,7 +195,8 @@ class VedoRenderer:
         role = drawable.role
 
         if role == "body_mesh":
-            return _mesh_actors(drawable.geometry, encoding, view)
+            return _mesh_actors(
+                drawable.geometry, encoding, view, reference_scale)
         if role == "momental_ellipsoid":
             return _ellipsoid_actors(drawable.geometry, encoding, view)
         if role == "polhode":
@@ -273,14 +294,42 @@ def _reference_scale(scene):
 # Per-role actor builders
 # --------------------------------------------------------------------
 
-def _mesh_actors(shape, encoding, view):
-    """Build the rigid body's mesh from its shape primitive."""
+def _mesh_actors(shape, encoding, view, reference_scale):
+    """Build the rigid body's mesh from its shape primitive.
+
+    The mesh is scaled to a display size beside the ellipsoid (its own
+    per-layer scale, Section 14.5) so the object is visible inside its
+    momental ellipsoid rather than a speck at the centre -- the two live in
+    different spaces with no common physical scale (see
+    ``_BODY_DISPLAY_FRACTION``). The scale is uniform, so the object's shape
+    is untouched; only its overall size is chosen for display.
+    """
     mesh = _mesh_for_shape(shape)
     if mesh is None:
         return []
+    _scale_to_display_size(mesh, reference_scale)
     mesh.c(encoding.color).alpha(encoding.opacity).lighting("default")
     _apply_rotation(mesh, view)
     return [mesh]
+
+
+def _scale_to_display_size(mesh, reference_scale):
+    """Scale a mesh so its largest half-extent is a fixed display size.
+
+    Uniformly scales the mesh (about the origin, where the body is centred)
+    so its largest half-extent becomes ``_BODY_DISPLAY_FRACTION`` of the
+    ellipsoid's reference size. This is the object layer's display scale
+    (Section 14.5): it preserves the object's shape exactly and only sets
+    how large it is drawn relative to the momental ellipsoid.
+    """
+    bounds = mesh.bounds()
+    half_extent = 0.5 * max(
+        bounds[1] - bounds[0], bounds[3] - bounds[2],
+        bounds[5] - bounds[4])
+    if half_extent <= 0.0:
+        return
+    target = _BODY_DISPLAY_FRACTION * reference_scale
+    mesh.scale(target / half_extent)
 
 
 def _mesh_for_shape(shape):
@@ -313,13 +362,52 @@ def _mesh_for_shape(shape):
 
 
 def _ellipsoid_actors(ellipsoid, encoding, view):
-    """Build the momental ellipsoid as a translucent wireframe."""
-    mesh = vedo.Sphere(r=1.0, res=_ELLIPSOID_MESH_RESOLUTION).scale(
-        [float(axis) for axis in ellipsoid.semi_axes])
-    mesh.wireframe(True).c(encoding.color).alpha(encoding.opacity)
-    # Orient by the body's principal axes, then into the view frame.
-    _apply_rotation(mesh, view @ np.asarray(ellipsoid.axes, dtype=float))
-    return [mesh]
+    """Build the momental ellipsoid as a cage of latitude/longitude rings.
+
+    Only the circular grid lines are drawn -- parallels and meridians --
+    and not the diagonal edges a triangulated wireframe carries, so the
+    surface reads cleanly and the object nested inside it stays visible (a
+    viewer's report). Each ring is a unit-sphere circle scaled by the
+    semi-axes, oriented by the body's principal axes, then carried into the
+    panel's frame, so the ellipsoid rolls with the body in the space view.
+    """
+    semi_axes = np.asarray(ellipsoid.semi_axes, dtype=float)
+    orientation = view @ np.asarray(ellipsoid.axes, dtype=float)
+    actors = []
+    for ring, closed in _ellipsoid_ring_points(semi_axes):
+        placed = ring @ orientation.T
+        line = vedo.Line(placed, closed=closed, lw=encoding.line_weight)
+        line.c(encoding.color).alpha(encoding.opacity)
+        actors.append(line)
+    return actors
+
+
+def _ellipsoid_ring_points(semi_axes):
+    """Yield ``(points, closed)`` for each latitude and longitude ring.
+
+    Points lie on the unit sphere scaled by the semi-axes, in the body's
+    principal frame. Parallels are closed circles at a fixed polar angle
+    (excluding the poles themselves); meridians are open arcs running from
+    pole to pole at a fixed azimuth. Together they form the globe cage.
+    """
+    azimuth = np.linspace(0.0, 2.0 * np.pi, _ELLIPSOID_RING_SAMPLES)
+    polar = np.linspace(0.0, np.pi, _ELLIPSOID_RING_SAMPLES)
+    # Latitude circles (parallels), evenly spaced between the poles.
+    for index in range(1, _ELLIPSOID_PARALLEL_COUNT + 1):
+        angle = np.pi * index / (_ELLIPSOID_PARALLEL_COUNT + 1)
+        ring = np.column_stack([
+            np.sin(angle) * np.cos(azimuth),
+            np.sin(angle) * np.sin(azimuth),
+            np.full_like(azimuth, np.cos(angle))])
+        yield ring * semi_axes, True
+    # Longitude arcs (meridians), pole to pole at even azimuths.
+    for index in range(_ELLIPSOID_MERIDIAN_COUNT):
+        angle = 2.0 * np.pi * index / _ELLIPSOID_MERIDIAN_COUNT
+        arc = np.column_stack([
+            np.sin(polar) * np.cos(angle),
+            np.sin(polar) * np.sin(angle),
+            np.cos(polar)])
+        yield arc * semi_axes, False
 
 
 def _curve_actors(points, encoding, view):
