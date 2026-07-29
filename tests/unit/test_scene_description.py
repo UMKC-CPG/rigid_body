@@ -122,16 +122,19 @@ def test_applied_torque_scene_drops_the_poinsot_construction():
 # --------------------------------------------------------------------
 
 def test_drawables_are_anchored_to_the_right_panel_and_frame():
+    # Body-anchored drawables appear in BOTH panels (Section 11.4): still in
+    # the body view, rolling in the space view. Space-anchored references
+    # stay in the space panel; the overlay belongs to neither.
     _body, _state, scene = torque_free_scene()
     expectations = {
-        "body_mesh": (sd.DrawablePanel.BODY, Frame.BODY),
-        "momental_ellipsoid": (sd.DrawablePanel.BODY, Frame.BODY),
-        "polhode": (sd.DrawablePanel.BODY, Frame.BODY),
+        "body_mesh": (sd.DrawablePanel.BOTH, Frame.BODY),
+        "momental_ellipsoid": (sd.DrawablePanel.BOTH, Frame.BODY),
+        "polhode": (sd.DrawablePanel.BOTH, Frame.BODY),
         "invariable_plane": (sd.DrawablePanel.SPACE, Frame.SPACE),
         "herpolhode": (sd.DrawablePanel.SPACE, Frame.SPACE),
         "angular_velocity": (sd.DrawablePanel.BOTH, Frame.BODY),
         "angular_momentum": (sd.DrawablePanel.BOTH, Frame.SPACE),
-        "body_triad": (sd.DrawablePanel.BODY, Frame.BODY),
+        "body_triad": (sd.DrawablePanel.BOTH, Frame.BODY),
         "lab_triad": (sd.DrawablePanel.SPACE, Frame.SPACE),
         "telemetry": (sd.DrawablePanel.NEITHER, None)}
     for role, (panel, frame) in expectations.items():

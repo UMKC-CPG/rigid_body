@@ -2492,20 +2492,24 @@ function build_scene(state, body, monitor):
     drawables <- empty list
 
     # The body, or its ellipsoid proxy if it has no geometry (§4, §10.2).
+    # Body-anchored drawables are panel = BOTH: they sit still in the body
+    # view and roll in the space view, which is the very motion §11.5 puts
+    # on screen. Their geometry stays in the body frame; to_view (§11.2)
+    # re-expresses it into the space panel at draw time.
     if body.geometry is not none:
         append(drawables, Drawable(body.geometry, "body_mesh",
-                                   panel = BODY, coordinate_frame = BODY,
+                                   panel = BOTH, coordinate_frame = BODY,
                                    label = "rigid body"))
     ellipsoid <- momental_ellipsoid(body)                    # 10.2
     append(drawables, Drawable(ellipsoid, "momental_ellipsoid",
-                               panel = BODY, coordinate_frame = BODY,
+                               panel = BOTH, coordinate_frame = BODY,
                                label = "momental ellipsoid",
                                scale_note = ellipsoid_scale_label()))
 
     # The Poinsot construction -- torque-free only (§10).
     if monitor.torque_models is empty:
         append(drawables, Drawable(polhode(body, state, SAMPLES),
-                                   "polhode", panel = BODY,
+                                   "polhode", panel = BOTH,
                                    coordinate_frame = BODY,
                                    label = "polhode: omega in body"))
         append(drawables, Drawable(invariable_plane(state, body),
@@ -2527,9 +2531,11 @@ function build_scene(state, body, monitor):
                                "angular_momentum", panel = BOTH,
                                coordinate_frame = SPACE, label = "L"))
 
-    # The two labeled triads (§1.1 names).
+    # The two labeled triads (§1.1 names). The body axes are panel = BOTH,
+    # like the rest of the body-anchored construction, so the principal
+    # axes are seen turning against the fixed lab axes in the space view.
     append(drawables, Drawable(body.principal_axes, "body_triad",
-                               panel = BODY, coordinate_frame = BODY,
+                               panel = BOTH, coordinate_frame = BODY,
                                label = "body axes 1, 2, 3"))
     append(drawables, Drawable(LABORATORY_AXES, "lab_triad",
                                panel = SPACE, coordinate_frame = SPACE,

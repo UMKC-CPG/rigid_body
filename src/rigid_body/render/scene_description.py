@@ -50,9 +50,12 @@ class DrawablePanel(Enum):
     """Which panel(s) a drawable belongs to (PSEUDOCODE Section 14.2).
 
     ``BODY`` and ``SPACE`` anchor a drawable to one frame's panel; ``BOTH``
-    marks the two shared arrows drawn in each panel and re-expressed per
-    panel at draw time (Section 11.4); ``NEITHER`` is the telemetry
-    overlay, which rides above both panels and belongs to no frame.
+    marks everything drawn in each panel and re-expressed per panel at draw
+    time (Section 11.4) -- the shared arrows and the body-anchored Poinsot
+    objects (the object, the momental ellipsoid, the polhode, the body
+    axes), which sit still in the body view and roll in the space view;
+    ``NEITHER`` is the telemetry overlay, which rides above both panels and
+    belongs to no frame.
 
     This is distinct from :class:`Frame`: ``DrawablePanel`` says *where a
     thing is shown*, while a drawable's ``coordinate_frame`` says *what
@@ -204,16 +207,21 @@ def build_scene(state, body, monitor, presentation=None, report=None,
 
     # The body itself, or -- for a body given by its moments with no
     # geometry to draw (Section 4, the Earth of VISION Goal 12) -- the
-    # momental ellipsoid stands in as its visual proxy.
+    # momental ellipsoid stands in as its visual proxy. Body-anchored
+    # drawables appear in BOTH panels (Section 11.4): held still in the
+    # body-frame view and rolling in the space-frame view, which is the
+    # very motion the Poinsot ellipsoid makes visible (Section 10). Their
+    # geometry stays in the body frame; the renderer re-expresses it per
+    # panel with to_view, so the coordinate frame travels with each.
     if getattr(body, "geometry", None) is not None:
         drawables.append(Drawable(
             geometry=body.geometry, role="body_mesh",
-            panel=DrawablePanel.BODY, coordinate_frame=Frame.BODY,
+            panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
             label="rigid body"))
 
     drawables.append(Drawable(
         geometry=momental_ellipsoid(body), role="momental_ellipsoid",
-        panel=DrawablePanel.BODY, coordinate_frame=Frame.BODY,
+        panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
         label="momental ellipsoid",
         scale_note=ellipsoid_scale_label(presentation)))
 
@@ -222,7 +230,7 @@ def build_scene(state, body, monitor, presentation=None, report=None,
         polhode_curve = polhode(body, state, polhode_sample_count)
         drawables.append(Drawable(
             geometry=polhode_curve, role="polhode",
-            panel=DrawablePanel.BODY, coordinate_frame=Frame.BODY,
+            panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
             label="polhode: omega in body"))
         plane = invariable_plane(state, body)
         drawables.append(Drawable(
@@ -254,7 +262,7 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     # a color-blind palette (Section 14.3).
     drawables.append(Drawable(
         geometry=np.asarray(body.principal_axes, dtype=float),
-        role="body_triad", panel=DrawablePanel.BODY,
+        role="body_triad", panel=DrawablePanel.BOTH,
         coordinate_frame=Frame.BODY, label="body axes 1, 2, 3"))
     drawables.append(Drawable(
         geometry=LABORATORY_AXES, role="lab_triad",
