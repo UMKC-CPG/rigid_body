@@ -2508,10 +2508,16 @@ function build_scene(state, body, monitor):
 
     # The Poinsot construction -- torque-free only (§10).
     if monitor.torque_models is empty:
-        append(drawables, Drawable(polhode(body, state, SAMPLES),
-                                   "polhode", panel = BOTH,
-                                   coordinate_frame = BODY,
-                                   label = "polhode: omega in body"))
+        # polhode() samples the path of omega at the angular-velocity
+        # scale; rescale it onto the ellipsoid surface -- the contact point
+        # rho = omega/sqrt(2T) (§14.5) -- so it lies on the ellipsoid a
+        # viewer sees rather than floating outside it at the omega radius.
+        append(drawables, Drawable(
+                   polhode_on_ellipsoid(polhode(body, state, SAMPLES),
+                                        state, body),
+                   "polhode", panel = BOTH,
+                   coordinate_frame = BODY,
+                   label = "polhode: omega in body"))
         append(drawables, Drawable(invariable_plane(state, body),
                                    "invariable_plane", panel = SPACE,
                                    coordinate_frame = SPACE,
@@ -2603,6 +2609,14 @@ body-fixed regardless of spin rate, on which the contact point is the
 scaled `rho = omega/sqrt(2T)`; and the **energy ellipsoid**
 `omega . I . omega = 2T`, the same shape resized so the tip of `omega`
 itself is the contact point.
+
+The polhode is drawn on the **inertia** ellipsoid so it sits on the
+surface a viewer sees. `polhode()` returns the path of `omega` at the
+angular-velocity scale, a factor `sqrt(2T)` larger; `polhode_on_ellipsoid`
+scales the whole curve by that one conserved factor to `rho = omega/
+sqrt(2T)`, where `rho . I . rho = 1` places every point exactly on the
+inertia ellipsoid. (The herpolhode band still reads the raw `omega`-scale
+samples, which it rescales itself, §10.5.)
 
 ```
 function ellipsoid_scale_label():

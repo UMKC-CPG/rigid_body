@@ -284,7 +284,8 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     if _is_torque_free(monitor):
         polhode_curve = polhode(body, state, polhode_sample_count)
         drawables.append(Drawable(
-            geometry=polhode_curve, role="polhode",
+            geometry=_polhode_on_ellipsoid(polhode_curve, state, body),
+            role="polhode",
             panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
             label="polhode: omega in body"))
         plane = invariable_plane(state, body)
@@ -379,6 +380,27 @@ def _is_torque_free(monitor):
     """
     torque_models = getattr(monitor, "torque_models", None)
     return not torque_models
+
+
+def _polhode_on_ellipsoid(polhode_curve, state, body):
+    """Rescale the polhode from omega scale onto the ellipsoid surface.
+
+    ``geometry.poinsot.polhode`` samples the path of ``omega`` itself, at
+    the angular-velocity scale; the point that actually touches the momental
+    ellipsoid is the contact point ``rho = omega / sqrt(2T)`` (Section 10.2),
+    a factor ``1 / sqrt(2T)`` smaller. Because ``2T`` is conserved along the
+    polhode, that single factor carries the whole curve onto the surface,
+    where ``rho . I . rho = 1`` puts every point exactly on the inertia
+    ellipsoid. Drawing at this scale is what lets the polhode sit on the
+    ellipsoid a viewer sees, rather than float outside it at the raw ``omega``
+    radius. The returned curve keeps the original's ``kind``; only the
+    sample coordinates are rescaled.
+    """
+    twice_kinetic_energy = 2.0 * kinetic_energy(state, body)
+    contact_point_scale = 1.0 / np.sqrt(twice_kinetic_energy)
+    rescaled_points = (
+        np.asarray(polhode_curve.points, dtype=float) * contact_point_scale)
+    return polhode_curve._replace(points=rescaled_points)
 
 
 def _herpolhode_geometry(state, body, polhode_points, plane):

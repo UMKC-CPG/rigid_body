@@ -228,6 +228,20 @@ def test_scene_reference_scale_is_the_ellipsoid_max_semi_axis():
     assert scene.reference_scale > 0.0
 
 
+def test_the_polhode_is_drawn_on_the_ellipsoid_surface():
+    # Poinsot's point is that the contact point rho = omega/sqrt(2T) touches
+    # the momental ellipsoid, so the drawn polhode should lie ON the surface
+    # a viewer sees, not float outside it at the raw omega radius. Every
+    # drawn point must satisfy the ellipsoid equation sum((x/semi)^2) = 1
+    # (Sections 10.2, 10.4).
+    _body, _state, scene = torque_free_scene()
+    semi_axes = drawable_named(
+        scene, "momental_ellipsoid").geometry.semi_axes
+    polhode_points = drawable_named(scene, "polhode").geometry.points
+    residual = ((polhode_points / semi_axes) ** 2).sum(axis=1)
+    np.testing.assert_allclose(residual, 1.0, atol=1e-9)
+
+
 def test_ellipsoid_detail_defaults_to_none_and_is_carried_through():
     # The detail level is draw-only presentation state: build_scene passes
     # whatever it is handed straight onto the scene for the renderer, and a
