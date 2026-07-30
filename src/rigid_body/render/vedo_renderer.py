@@ -59,11 +59,20 @@ _MOMENTUM_ARROW_LENGTH = 1.5
 # -- a "globe" wireframe -- rather than a triangulated surface, because the
 # triangulation's diagonals clutter the shape and blur the 3D sense (a
 # viewer's report). A few clean circles read the surface better and let the
-# object nested inside it show through. These set how many rings and how
-# smoothly each is sampled.
-_ELLIPSOID_PARALLEL_COUNT = 5      # latitude circles between the poles
-_ELLIPSOID_MERIDIAN_COUNT = 8      # longitude arcs from pole to pole
-_ELLIPSOID_RING_SAMPLES = 64       # points per ring, for a smooth curve
+# object nested inside it show through.
+#
+# How many rings the cage carries is chosen by the viewer's mesh-density
+# controls (Ctrl+[ / Ctrl+], Section 15.7): the scene carries an abstract
+# detail *level* and the renderer maps it to a ring count here, so the level
+# stays renderer-agnostic. Level 1 is the sparsest legible cage; each level
+# above it adds a fixed number of parallels and meridians. The default level
+# reproduces the fixed counts the tool drew before the control existed.
+_ELLIPSOID_BASE_PARALLEL_COUNT = 3   # latitude circles at detail level 1
+_ELLIPSOID_BASE_MERIDIAN_COUNT = 4   # longitude arcs at detail level 1
+_ELLIPSOID_PARALLELS_PER_LEVEL = 2   # parallels added per level above 1
+_ELLIPSOID_MERIDIANS_PER_LEVEL = 4   # meridians added per level above 1
+_ELLIPSOID_DEFAULT_DETAIL = 2        # the shipped look: 5 parallels, 8 mer.
+_ELLIPSOID_RING_SAMPLES = 64         # points per ring, for a smooth curve
 
 # The body object lives in physical space (metres) while the momental
 # ellipsoid lives in the angular-velocity space of 1/sqrt(I); there is no
@@ -187,16 +196,21 @@ class VedoRenderer:
         reference_scale = getattr(scene, "reference_scale", None)
         if not reference_scale:
             reference_scale = _reference_scale(scene)
+        # The ellipsoid cage's ring counts follow the scene's detail level;
+        # resolve it once per panel and hand it to the ellipsoid builder.
+        ring_counts = _ellipsoid_ring_counts(
+            getattr(scene, "ellipsoid_detail", None))
         actors = []
         for drawable in scene.drawables:
             if not _drawable_in_panel(drawable, view_frame):
                 continue
             actors.extend(self._actors_for(
-                drawable, state, view_frame, rotation, reference_scale))
+                drawable, state, view_frame, rotation, reference_scale,
+                ring_counts))
         return actors
 
     def _actors_for(self, drawable, state, view_frame, rotation,
-                    reference_scale):
+                    reference_scale, ring_counts):
         """Dispatch a drawable to the actor builder for its role."""
         encoding = resolve_encoding(self.palette, drawable.role)
         view = _view_rotation(view_frame, drawable.coordinate_frame,
@@ -207,7 +221,8 @@ class VedoRenderer:
             return _mesh_actors(
                 drawable.geometry, encoding, view, reference_scale)
         if role == "momental_ellipsoid":
-            return _ellipsoid_actors(drawable.geometry, encoding, view)
+            return _ellipsoid_actors(
+                drawable.geometry, encoding, view, ring_counts)
         if role == "polhode":
             return _curve_actors(drawable.geometry.points, encoding, view)
         if role == "invariable_plane":
@@ -370,7 +385,28 @@ def _mesh_for_shape(shape):
     return None
 
 
-def _ellipsoid_actors(ellipsoid, encoding, view):
+def _ellipsoid_ring_counts(detail):
+    """Map a viewer detail level to ``(parallels, meridians)`` ring counts.
+
+    ``detail`` is the abstract density level the scene carries (Section
+    15.7), or ``None`` for the default look the batch tier and any
+    non-toggling caller get. Level 1 draws the sparsest legible cage; each
+    level above it adds a fixed number of parallels and meridians, so a
+    higher level is a finer mesh. The mapping lives here because turning a
+    level into a ring count is a rendering detail (a different backend would
+    tessellate its own way); the level itself stays renderer-agnostic.
+    """
+    if detail is None:
+        detail = _ELLIPSOID_DEFAULT_DETAIL
+    steps_above_base = max(0, int(detail) - 1)
+    parallels = (_ELLIPSOID_BASE_PARALLEL_COUNT
+                 + steps_above_base * _ELLIPSOID_PARALLELS_PER_LEVEL)
+    meridians = (_ELLIPSOID_BASE_MERIDIAN_COUNT
+                 + steps_above_base * _ELLIPSOID_MERIDIANS_PER_LEVEL)
+    return parallels, meridians
+
+
+def _ellipsoid_actors(ellipsoid, encoding, view, ring_counts):
     """Build the momental ellipsoid as a cage of latitude/longitude rings.
 
     Only the circular grid lines are drawn -- parallels and meridians --
@@ -379,11 +415,16 @@ def _ellipsoid_actors(ellipsoid, encoding, view):
     viewer's report). Each ring is a unit-sphere circle scaled by the
     semi-axes, oriented by the body's principal axes, then carried into the
     panel's frame, so the ellipsoid rolls with the body in the space view.
+    ``ring_counts`` is the ``(parallels, meridians)`` pair the scene's detail
+    level resolved to, so a viewer can thin or thicken the cage (Section
+    15.7).
     """
     semi_axes = np.asarray(ellipsoid.semi_axes, dtype=float)
     orientation = view @ np.asarray(ellipsoid.axes, dtype=float)
+    parallel_count, meridian_count = ring_counts
     actors = []
-    for ring, closed in _ellipsoid_ring_points(semi_axes):
+    for ring, closed in _ellipsoid_ring_points(
+            semi_axes, parallel_count, meridian_count):
         placed = ring @ orientation.T
         line = vedo.Line(placed, closed=closed, lw=encoding.line_weight)
         line.c(encoding.color).alpha(encoding.opacity)
@@ -391,27 +432,29 @@ def _ellipsoid_actors(ellipsoid, encoding, view):
     return actors
 
 
-def _ellipsoid_ring_points(semi_axes):
+def _ellipsoid_ring_points(semi_axes, parallel_count, meridian_count):
     """Yield ``(points, closed)`` for each latitude and longitude ring.
 
     Points lie on the unit sphere scaled by the semi-axes, in the body's
     principal frame. Parallels are closed circles at a fixed polar angle
     (excluding the poles themselves); meridians are open arcs running from
-    pole to pole at a fixed azimuth. Together they form the globe cage.
+    pole to pole at a fixed azimuth. ``parallel_count`` and ``meridian_count``
+    set how many of each the cage carries (its density, Section 15.7).
+    Together they form the globe cage.
     """
     azimuth = np.linspace(0.0, 2.0 * np.pi, _ELLIPSOID_RING_SAMPLES)
     polar = np.linspace(0.0, np.pi, _ELLIPSOID_RING_SAMPLES)
     # Latitude circles (parallels), evenly spaced between the poles.
-    for index in range(1, _ELLIPSOID_PARALLEL_COUNT + 1):
-        angle = np.pi * index / (_ELLIPSOID_PARALLEL_COUNT + 1)
+    for index in range(1, parallel_count + 1):
+        angle = np.pi * index / (parallel_count + 1)
         ring = np.column_stack([
             np.sin(angle) * np.cos(azimuth),
             np.sin(angle) * np.sin(azimuth),
             np.full_like(azimuth, np.cos(angle))])
         yield ring * semi_axes, True
     # Longitude arcs (meridians), pole to pole at even azimuths.
-    for index in range(_ELLIPSOID_MERIDIAN_COUNT):
-        angle = 2.0 * np.pi * index / _ELLIPSOID_MERIDIAN_COUNT
+    for index in range(meridian_count):
+        angle = 2.0 * np.pi * index / meridian_count
         arc = np.column_stack([
             np.sin(polar) * np.cos(angle),
             np.sin(polar) * np.sin(angle),

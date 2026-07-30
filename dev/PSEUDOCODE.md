@@ -2868,6 +2868,28 @@ chorded key matches nothing there and reaches only our handler. The bare
 window-close keys (`q`, `Escape`) are still honored for quit, so a window
 the backend shuts on its own keeps the loop's closed flag in step.
 
+Alongside the layer toggles is one more presentation control: the momental
+ellipsoid's wireframe **mesh density**. The ring cage that reads its surface
+(§14.5) can be too sparse to feel three-dimensional or too dense to see the
+object nested inside it, and the right amount depends on the body and the
+viewer's screen. So the window binds `Ctrl+[` and `Ctrl+]` to step an
+abstract **detail level** down and up, clamped between a legible minimum and
+a sensibly dense maximum. Like the visible layers, the level rides the
+read-only control record (`ellipsoid_detail`, §15.3) and is passed straight
+through `build_scene` onto the scene; the renderer alone turns the level
+into a ring count, so the level stays renderer-agnostic and the control
+touches no state (§15.2, Principle 9).
+
+```
+ELLIPSOID_DETAIL_MIN, ELLIPSOID_DETAIL_MAX, ELLIPSOID_DETAIL_DEFAULT
+
+function change_ellipsoid_detail(current, step):
+    # A finer/coarser chord moves the level by one, resting at a bound
+    # rather than running off into an illegible or empty cage.
+    return clamp(current + step,
+                 ELLIPSOID_DETAIL_MIN, ELLIPSOID_DETAIL_MAX)
+```
+
 The window also draws a small **key legend** in a corner so the whole
 vocabulary is discoverable without a manual. The legend is static text
 produced beside the bindings, so the keys shown can never drift from the

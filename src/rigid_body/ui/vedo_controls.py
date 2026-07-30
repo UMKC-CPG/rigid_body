@@ -28,7 +28,8 @@ offscreen previews and headless tests.
 
 from rigid_body.dynamics.time_control import (
     Controls, ControlMode, Pace, pace_after_frame,
-    DISPLAY_LAYERS, ALL_LAYERS_VISIBLE)
+    DISPLAY_LAYERS, ALL_LAYERS_VISIBLE,
+    ELLIPSOID_DETAIL_MIN, ELLIPSOID_DETAIL_MAX, ELLIPSOID_DETAIL_DEFAULT)
 
 
 # Every command is chorded with the Control key (Section 15.7). This is not
@@ -62,6 +63,14 @@ _LAYER_TOGGLE_KEYS = {
     "ctrl+b": "body", "ctrl+e": "ellipsoid",
     "ctrl+v": "vectors", "ctrl+t": "triads"}
 
+# The chords that make the momental ellipsoid's wireframe cage coarser or
+# finer (Section 15.7). The bracket keys follow the familiar "[" smaller /
+# "]" larger convention, so a viewer can thin a cluttered cage or thicken a
+# sparse one to read the 3D shape better. They move the detail level by one,
+# clamped to its bounds; the renderer turns the level into a ring count.
+_MESH_COARSER_KEYS = {"ctrl+bracketleft"}
+_MESH_FINER_KEYS = {"ctrl+bracketright"}
+
 
 class KeyboardControlState:
     """The pure state machine behind the keyboard time controls.
@@ -79,6 +88,9 @@ class KeyboardControlState:
         self.closed = False
         # Every display layer starts switched on; a toggle key flips one.
         self.visible_layers = set(DISPLAY_LAYERS)
+        # The momental ellipsoid's wireframe density starts at the default
+        # level; the mesh-density chords step it within its bounds.
+        self.ellipsoid_detail = ELLIPSOID_DETAIL_DEFAULT
 
     def handle_key(self, key):
         """Update the state from one pressed key (case-insensitive)."""
@@ -97,6 +109,10 @@ class KeyboardControlState:
             self.pace = Pace.NORMAL
         elif pressed in _LAYER_TOGGLE_KEYS:
             self._toggle_layer(_LAYER_TOGGLE_KEYS[pressed])
+        elif pressed in _MESH_COARSER_KEYS:
+            self._change_ellipsoid_detail(-1)
+        elif pressed in _MESH_FINER_KEYS:
+            self._change_ellipsoid_detail(+1)
         elif pressed in _CLOSE_KEYS:
             self.closed = True
 
@@ -107,12 +123,25 @@ class KeyboardControlState:
         else:
             self.visible_layers.add(layer)
 
+    def _change_ellipsoid_detail(self, step):
+        """Move the ellipsoid detail level by ``step``, clamped to bounds.
+
+        The finer/coarser chords each shift the level by one. Clamping at the
+        bounds means a viewer who keeps pressing simply rests at the densest
+        or sparsest cage rather than running off into an illegible mesh or an
+        empty one (Section 15.7).
+        """
+        self.ellipsoid_detail = max(
+            ELLIPSOID_DETAIL_MIN,
+            min(ELLIPSOID_DETAIL_MAX, self.ellipsoid_detail + step))
+
     def snapshot(self):
         """Return the current controls as a plain :class:`Controls`."""
         return Controls(
             mode=ControlMode.LIVE, pace=self.pace,
             nominal_substeps=self.nominal_substeps,
-            visible_layers=frozenset(self.visible_layers))
+            visible_layers=frozenset(self.visible_layers),
+            ellipsoid_detail=self.ellipsoid_detail)
 
     def advance_after_read(self):
         """Apply the once-per-frame pace transition after a read.
@@ -195,7 +224,8 @@ class AutoControlsSource:
         return Controls(
             mode=ControlMode.LIVE, pace=Pace.NORMAL,
             nominal_substeps=self.nominal_substeps,
-            visible_layers=ALL_LAYERS_VISIBLE)
+            visible_layers=ALL_LAYERS_VISIBLE,
+            ellipsoid_detail=ELLIPSOID_DETAIL_DEFAULT)
 
     def pump(self):
         """No window to pump."""
@@ -219,4 +249,5 @@ def control_legend_lines():
         "  Ctrl+-: slower   Ctrl++: faster   Ctrl+n: normal",
         "  Ctrl+q: quit",
         "  toggle  Ctrl+b: body  Ctrl+e: ellipsoid",
-        "          Ctrl+v: vectors  Ctrl+t: axes"]
+        "          Ctrl+v: vectors  Ctrl+t: axes",
+        "  ellipsoid mesh  Ctrl+[: coarser  Ctrl+]: finer"]

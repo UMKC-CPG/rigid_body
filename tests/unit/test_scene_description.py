@@ -228,6 +228,20 @@ def test_scene_reference_scale_is_the_ellipsoid_max_semi_axis():
     assert scene.reference_scale > 0.0
 
 
+def test_ellipsoid_detail_defaults_to_none_and_is_carried_through():
+    # The detail level is draw-only presentation state: build_scene passes
+    # whatever it is handed straight onto the scene for the renderer, and a
+    # caller that does not choose one (the batch tier) leaves it None.
+    body = make_body(ASYMMETRIC_BOX)
+    state = st.State(IDENTITY_QUATERNION, TUMBLING_OMEGA)
+    monitor = ConservationMonitor(state, body, [])
+    default_scene = sd.build_scene(state, body, monitor)
+    assert default_scene.ellipsoid_detail is None
+    chosen_scene = sd.build_scene(
+        state, body, monitor, ellipsoid_detail=4)
+    assert chosen_scene.ellipsoid_detail == 4
+
+
 def test_reference_scale_survives_hiding_the_ellipsoid_layer():
     # The scene carries the reference size so it stays fixed even when the
     # ellipsoid drawable is filtered out -- otherwise the object and arrows

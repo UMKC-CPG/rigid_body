@@ -28,9 +28,11 @@ from rigid_body.analysis.conservation_monitor import ConservationMonitor
 from rigid_body.render import scene_description as sd
 from rigid_body.render import palettes as pal
 from rigid_body.render.vedo_renderer import (
-    VedoRenderer, _ellipsoid_ring_points, _scale_to_display_size,
-    _ELLIPSOID_PARALLEL_COUNT, _ELLIPSOID_MERIDIAN_COUNT,
+    VedoRenderer, _ellipsoid_ring_points, _ellipsoid_ring_counts,
+    _scale_to_display_size, _ELLIPSOID_DEFAULT_DETAIL,
     _BODY_DISPLAY_FRACTION)
+from rigid_body.dynamics.time_control import (
+    ELLIPSOID_DETAIL_MIN, ELLIPSOID_DETAIL_MAX)
 
 
 def make_body(shape, density=1000.0):
@@ -108,15 +110,36 @@ def render_to_array(scene, state, palette, layout):
 
 def test_ellipsoid_rings_lie_on_the_surface_and_split_by_kind():
     semi = np.array([2.0, 3.0, 1.5])
-    rings = list(_ellipsoid_ring_points(semi))
+    parallels, meridians = _ellipsoid_ring_counts(None)  # default look
+    rings = list(_ellipsoid_ring_points(semi, parallels, meridians))
     closed_flags = [closed for _points, closed in rings]
     # Parallels are closed circles; meridians are open pole-to-pole arcs.
-    assert closed_flags.count(True) == _ELLIPSOID_PARALLEL_COUNT
-    assert closed_flags.count(False) == _ELLIPSOID_MERIDIAN_COUNT
+    assert closed_flags.count(True) == parallels
+    assert closed_flags.count(False) == meridians
     # Every ring point lies on the ellipsoid: (x/a)^2 + (y/b)^2 + (z/c)^2 = 1.
     for points, _closed in rings:
         residual = ((points / semi) ** 2).sum(axis=1)
         np.testing.assert_allclose(residual, 1.0, atol=1e-9)
+
+
+def test_mesh_detail_level_maps_to_a_monotone_ring_count():
+    # The default level (or None) reproduces the look the tool shipped with:
+    # five parallels and eight meridians.
+    assert _ellipsoid_ring_counts(None) == _ellipsoid_ring_counts(
+        _ELLIPSOID_DEFAULT_DETAIL)
+    assert _ellipsoid_ring_counts(None) == (5, 8)
+    # A finer level is a strictly denser cage than a coarser one, in both
+    # ring families -- so the control visibly thins or thickens the mesh.
+    coarse_parallels, coarse_meridians = _ellipsoid_ring_counts(
+        ELLIPSOID_DETAIL_MIN)
+    fine_parallels, fine_meridians = _ellipsoid_ring_counts(
+        ELLIPSOID_DETAIL_MAX)
+    assert fine_parallels > coarse_parallels
+    assert fine_meridians > coarse_meridians
+    # Even the sparsest cage keeps at least a couple of rings each way, so it
+    # never collapses to an unreadable shape.
+    assert coarse_parallels >= 2
+    assert coarse_meridians >= 3
 
 
 def test_the_body_mesh_scales_to_the_display_fraction():

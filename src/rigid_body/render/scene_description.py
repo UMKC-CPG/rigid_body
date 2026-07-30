@@ -217,15 +217,22 @@ class Scene(NamedTuple):
     the ellipsoid layer is toggled off and its drawable is absent (Section
     15.7). It depends only on the body's moments, so it is constant for a
     given body.
+
+    ``ellipsoid_detail`` is the viewer's chosen wireframe density level for
+    the momental ellipsoid (Section 15.7), passed straight through to the
+    renderer, which maps the level to a ring count. ``None`` means the
+    renderer's default look -- what the batch tier and any non-toggling
+    caller get. Like the layer filtering, it changes only what is drawn.
     """
 
     drawables: list
     reference_scale: float = 1.0
+    ellipsoid_detail: Optional[int] = None
 
 
 def build_scene(state, body, monitor, presentation=None, report=None,
                 time_ratio=None, polhode_sample_count=POLHODE_SAMPLE_COUNT,
-                visible_layers=None):
+                visible_layers=None, ellipsoid_detail=None):
     """Assemble the scene inventory for one frame from computed quantities.
 
     Called by the interactive loop each frame (PSEUDOCODE Section 1.2). It
@@ -241,6 +248,11 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     drawables from the returned scene; the always-on telemetry overlay is
     never filtered. Filtering only chooses *what is drawn* and reads no
     state, so it cannot disturb the physics (VISION Principle 9).
+
+    ``ellipsoid_detail`` is the viewer's chosen wireframe density level for
+    the momental ellipsoid (Section 15.7), carried straight onto the scene
+    for the renderer; ``None`` leaves the renderer's default look. It too is
+    draw-only and reads no state.
     """
     drawables = []
 
@@ -318,7 +330,8 @@ def build_scene(state, body, monitor, presentation=None, report=None,
 
     return Scene(
         drawables=_visible_only(drawables, visible_layers),
-        reference_scale=reference_scale)
+        reference_scale=reference_scale,
+        ellipsoid_detail=ellipsoid_detail)
 
 
 def active_scale_notes(scene):

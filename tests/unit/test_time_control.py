@@ -249,3 +249,28 @@ def test_the_layer_names_are_the_four_expected_groups():
     # ellipsoid and its construction, the shared vectors, and the triads.
     assert set(tc.DISPLAY_LAYERS) == {
         "body", "ellipsoid", "vectors", "triads"}
+
+
+# --------------------------------------------------------------------
+# The ellipsoid mesh-density level on the control record (Section 15.7)
+# --------------------------------------------------------------------
+
+def test_controls_default_to_the_default_mesh_density():
+    # A bare control record draws the ellipsoid at the default detail level.
+    controls = tc.Controls()
+    assert controls.ellipsoid_detail == tc.ELLIPSOID_DETAIL_DEFAULT
+
+
+def test_default_controls_carry_the_default_mesh_density():
+    scenario = SimpleNamespace(
+        fidelity=SimpleNamespace(substeps_per_frame=6))
+    controls = tc.default_controls(scenario)
+    assert controls.ellipsoid_detail == tc.ELLIPSOID_DETAIL_DEFAULT
+
+
+def test_the_mesh_density_bounds_bracket_the_default():
+    # The default sits inside the [min, max] band the controls clamp to, so
+    # a viewer can crank in both directions from where a run starts.
+    assert (tc.ELLIPSOID_DETAIL_MIN <= tc.ELLIPSOID_DETAIL_DEFAULT
+            <= tc.ELLIPSOID_DETAIL_MAX)
+    assert tc.ELLIPSOID_DETAIL_MIN < tc.ELLIPSOID_DETAIL_MAX

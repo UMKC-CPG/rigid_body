@@ -6,7 +6,8 @@ window required.
 """
 
 from rigid_body.dynamics.time_control import (
-    ControlMode, Pace, DISPLAY_LAYERS, ALL_LAYERS_VISIBLE)
+    ControlMode, Pace, DISPLAY_LAYERS, ALL_LAYERS_VISIBLE,
+    ELLIPSOID_DETAIL_MIN, ELLIPSOID_DETAIL_MAX, ELLIPSOID_DETAIL_DEFAULT)
 from rigid_body.ui.vedo_controls import (
     KeyboardControlState, AutoControlsSource, control_legend_lines)
 
@@ -135,6 +136,51 @@ def test_a_layer_key_leaves_the_pace_alone():
 
 
 # --------------------------------------------------------------------
+# The ellipsoid mesh-density control (Section 15.7)
+# --------------------------------------------------------------------
+
+def test_ellipsoid_detail_starts_at_the_default_level():
+    state = KeyboardControlState(nominal_substeps=10)
+    assert state.ellipsoid_detail == ELLIPSOID_DETAIL_DEFAULT
+
+
+def test_finer_and_coarser_chords_step_the_detail_level():
+    state = KeyboardControlState(nominal_substeps=10)
+    state.handle_key("Ctrl+bracketright")      # finer: one level up
+    assert state.ellipsoid_detail == ELLIPSOID_DETAIL_DEFAULT + 1
+    state.handle_key("Ctrl+bracketleft")       # coarser: back down
+    assert state.ellipsoid_detail == ELLIPSOID_DETAIL_DEFAULT
+
+
+def test_detail_level_clamps_at_both_bounds():
+    state = KeyboardControlState(nominal_substeps=10)
+    # Press finer well past the top: it rests at the maximum, not beyond.
+    for _ in range(10):
+        state.handle_key("Ctrl+bracketright")
+    assert state.ellipsoid_detail == ELLIPSOID_DETAIL_MAX
+    # And coarser past the bottom rests at the minimum, never an empty cage.
+    for _ in range(10):
+        state.handle_key("Ctrl+bracketleft")
+    assert state.ellipsoid_detail == ELLIPSOID_DETAIL_MIN
+
+
+def test_detail_level_rides_the_snapshot():
+    state = KeyboardControlState(nominal_substeps=10)
+    state.handle_key("Ctrl+bracketright")
+    controls = state.snapshot()
+    assert controls.ellipsoid_detail == ELLIPSOID_DETAIL_DEFAULT + 1
+
+
+def test_a_mesh_chord_leaves_the_pace_and_layers_alone():
+    # Mesh density is orthogonal to the time controls and the layer toggles.
+    state = KeyboardControlState(nominal_substeps=10)
+    state.handle_key("Ctrl+minus")             # slow motion
+    state.handle_key("Ctrl+bracketright")      # finer cage
+    assert state.pace is Pace.SLOW
+    assert state.visible_layers == set(DISPLAY_LAYERS)
+
+
+# --------------------------------------------------------------------
 # The on-screen key legend
 # --------------------------------------------------------------------
 
@@ -151,6 +197,10 @@ def test_the_legend_names_every_control_key():
     assert "toggle" in legend
     for layer_word in ("body", "ellipsoid", "vectors", "axes"):
         assert layer_word in legend
+    # The mesh-density control is documented too.
+    assert "mesh" in legend
+    for token in ("coarser", "finer"):
+        assert token in legend
 
 
 # --------------------------------------------------------------------
@@ -159,8 +209,12 @@ def test_the_legend_names_every_control_key():
 
 def test_auto_source_runs_a_fixed_number_of_frames():
     source = AutoControlsSource(nominal_substeps=5, max_frames=3)
-    paces = [source.read().pace for _ in range(3)]
-    assert all(pace is Pace.NORMAL for pace in paces)
+    controls = [source.read() for _ in range(3)]
+    assert all(one.pace is Pace.NORMAL for one in controls)
+    # The input-free source draws every layer at the default mesh density.
+    assert all(one.visible_layers == ALL_LAYERS_VISIBLE for one in controls)
+    assert all(
+        one.ellipsoid_detail == ELLIPSOID_DETAIL_DEFAULT for one in controls)
     assert source.frames_read == 3
     assert source.window_closed()
 

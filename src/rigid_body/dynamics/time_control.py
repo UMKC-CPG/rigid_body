@@ -49,6 +49,21 @@ DISPLAY_LAYERS = ("body", "ellipsoid", "vectors", "triads")
 ALL_LAYERS_VISIBLE = frozenset(DISPLAY_LAYERS)
 
 
+# How finely the momental ellipsoid's wireframe cage is drawn (Section 15.7).
+# This is an abstract *detail level*, not a ring count: the level rides the
+# control record and the renderer maps it to however many rings its own cage
+# uses, so the meaning stays renderer-agnostic (a different backend would
+# read the same level and tessellate its own way). A viewer raises or lowers
+# it with the mesh-density controls; the bounds keep the cage between a
+# legible minimum and a sensibly dense maximum, and the default is the look
+# the tool ships with. Like the visible layers, this is presentation state
+# on the read-only record -- it changes only how the ellipsoid is drawn,
+# never the physics (Section 15.2).
+ELLIPSOID_DETAIL_MIN = 1
+ELLIPSOID_DETAIL_MAX = 5
+ELLIPSOID_DETAIL_DEFAULT = 2
+
+
 class ControlMode(Enum):
     """Whether the loop is advancing the physics or replaying history.
 
@@ -93,6 +108,8 @@ class Controls:
     nothing to look up elsewhere. ``visible_layers`` is the set of display
     layers currently switched on (Section 15.7); it filters *what is drawn*
     and touches no state, so it too rides on the read-only record.
+    ``ellipsoid_detail`` is the momental ellipsoid's wireframe density level
+    (Section 15.7), another draw-only presentation choice carried here.
     """
 
     mode: ControlMode = ControlMode.LIVE
@@ -102,6 +119,7 @@ class Controls:
     scale_settings: dict = field(default_factory=dict)
     nominal_substeps: int = 1
     visible_layers: frozenset = ALL_LAYERS_VISIBLE
+    ellipsoid_detail: int = ELLIPSOID_DETAIL_DEFAULT
 
 
 def default_controls(scenario):
@@ -118,7 +136,8 @@ def default_controls(scenario):
         pending_edit=None,
         scale_settings={},
         nominal_substeps=scenario.fidelity.substeps_per_frame,
-        visible_layers=ALL_LAYERS_VISIBLE)
+        visible_layers=ALL_LAYERS_VISIBLE,
+        ellipsoid_detail=ELLIPSOID_DETAIL_DEFAULT)
 
 
 def substeps_this_frame(controls):

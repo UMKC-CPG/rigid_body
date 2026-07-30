@@ -123,7 +123,8 @@ def run_interactive(scenario, renderer, controls_source, sinks=None,
         scene = build_scene(
             state, body, monitor, presentation=presentation,
             report=latest_report, time_ratio=time_ratio,
-            visible_layers=controls.visible_layers)
+            visible_layers=controls.visible_layers,
+            ellipsoid_detail=controls.ellipsoid_detail)
         renderer.render(scene, state)
 
         controls_source.pump()
