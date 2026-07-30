@@ -547,13 +547,34 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       quantity visible off its true scale is now never silent. 2 tests
       (the footnote lists both shown scaled quantities; hiding a layer
       drops its note). 309 total.
+- [x] Keyboard commands chorded with Ctrl (§15.7). vedo's own viewer owns
+      the bare keys (e closes the window, +/- cycle the axis style), so
+      every live control is now Control-chorded: Ctrl+space pause, Ctrl+s
+      single-step, Ctrl+-/+ slow/fast, Ctrl+n normal, Ctrl+q quit, and
+      Ctrl+b/e/v/t for the layer toggles. A chorded key matches nothing in
+      vedo's plain-key dispatch table, so the collisions are gone by
+      construction rather than by luck; bare q/Escape stay honored too, so
+      a window the backend closes on its own still trips the loop's closed
+      flag. The corner legend and PSEUDOCODE §15.7 updated to match. The
+      keyboard tests were rewritten onto the chords (net 309 total).
+- [x] Ellipsoid mesh-density control (§15.7). The wireframe globe's ring
+      count is now the viewer's to set: an abstract detail level (1..5,
+      default 2) rides the read-only Controls record and passes through
+      build_scene onto the Scene, and the renderer alone maps the level to
+      a (parallels, meridians) count, so the level stays renderer-agnostic
+      and the default reproduces the shipped 5x8 look. Ctrl+[ coarsens and
+      Ctrl+] thickens the cage, clamped to its bounds; the legend documents
+      both. 10 new tests (the control record, the scene passthrough, the
+      monotone level->count map, and the keyboard stepping, clamping, and
+      orthogonality to the pace and layers). 319 total.
 - [ ] Deferred interactive refinements: the herpolhode
       swept trail + bounding band (now feasible with the driver feeding
       frames); true Platonic body meshes; live scenario editing through the
-      UI (currently pending_edit stays None -- time and layer controls
-      only); window-X close detection (v1 quits on 'q'/Escape); and a live
-      on/off marker in the key legend (currently a static reference; the
-      toggle's effect is seen in the scene itself).
+      UI (currently pending_edit stays None -- time, layer, and mesh
+      controls only); window-X close detection (v1 quits on Ctrl+q, with
+      bare q/Escape as a safety net); and a live on/off marker in the key
+      legend (currently a static reference; the toggle's effect is seen in
+      the scene itself).
 
 ---
 
