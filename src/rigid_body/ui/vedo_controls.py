@@ -7,9 +7,13 @@ record, ``pump`` to process the window's events, and ``window_closed`` to
 learn when the viewer is done. Two families of control are wired here: the
 time controls (pause, single-step, slow, fast, normal, and quit) and the
 display-layer toggles (Section 15.7) that switch the body, the ellipsoid
-and its construction, the vectors, and the axes on and off. The key
-reference the window shows is built by :func:`control_legend_lines`, kept
-beside the bindings so the two cannot drift. Editing the scenario through
+and its construction, the vectors, and the axes on and off.
+
+Every command is **chorded with the Control key** so that none collides
+with the viewer keys the graphics backend already claims for itself
+(Section 15.7); the bindings below carry the reasoning. The key reference
+the window shows is built by :func:`control_legend_lines`, kept beside the
+bindings so the two cannot drift. Editing the scenario through
 the window -- which would build a new scenario (Section 15.4) -- is left
 for later, so ``pending_edit`` stays absent in this version.
 
@@ -27,20 +31,36 @@ from rigid_body.dynamics.time_control import (
     DISPLAY_LAYERS, ALL_LAYERS_VISIBLE)
 
 
-# The keys each time control answers to. Several aliases map to one action
-# so the bindings feel natural whatever a backend names a key.
-_PAUSE_KEYS = {"space"}
-_SINGLE_STEP_KEYS = {"s"}
-_SLOW_KEYS = {"minus", "underscore", "comma", ","}
-_FAST_KEYS = {"plus", "equal", "period", "."}
-_NORMAL_KEYS = {"n", "0"}
-_CLOSE_KEYS = {"q", "escape"}
+# Every command is chorded with the Control key (Section 15.7). This is not
+# decoration: the vedo/VTK backend already claims most bare keys for its own
+# viewer actions -- plain ``+``/``-`` cycle its axis styles and plain ``e``
+# closes the window -- so an unchorded binding would fire the backend's
+# action instead of (or as well as) ours (a viewer's report). Chording makes
+# the collision impossible: the backend dispatches a keypress by looking the
+# same ``Ctrl+``-prefixed name up in a table that holds only the bare keys,
+# so a chorded key matches nothing there and reaches only our handler.
+#
+# Keys arrive already prefixed (``"Ctrl+s"``, ``"Ctrl+minus"``) and are
+# lowercased before matching, so the sets below are written in lower case.
+# Several aliases map to one action so a chord feels natural whatever a
+# keyboard's shift state names the key (``Ctrl+-`` and ``Ctrl+_`` both slow).
+_PAUSE_KEYS = {"ctrl+space"}
+_SINGLE_STEP_KEYS = {"ctrl+s"}
+_SLOW_KEYS = {"ctrl+minus", "ctrl+underscore", "ctrl+comma"}
+_FAST_KEYS = {"ctrl+plus", "ctrl+equal", "ctrl+period"}
+_NORMAL_KEYS = {"ctrl+n", "ctrl+0"}
+# Quit answers to its chord and, as a safety net, to the bare window-close
+# keys as well: the backend closes its window on a plain ``q``/``Escape`` of
+# its own accord, so honoring those here too keeps our closed flag in step
+# with the real window instead of drawing on into a dead one.
+_CLOSE_KEYS = {"ctrl+q", "ctrl+escape", "q", "escape"}
 
-# The keys that toggle a display layer on or off (Section 15.7): one letter
-# per layer, chosen to be mnemonic -- b for the body, e for the ellipsoid
-# and its construction, v for the vectors, t for the triads (axes).
+# The chords that toggle a display layer on or off (Section 15.7): one
+# mnemonic letter per layer -- b for the body, e for the ellipsoid and its
+# construction, v for the vectors, t for the triads (axes).
 _LAYER_TOGGLE_KEYS = {
-    "b": "body", "e": "ellipsoid", "v": "vectors", "t": "triads"}
+    "ctrl+b": "body", "ctrl+e": "ellipsoid",
+    "ctrl+v": "vectors", "ctrl+t": "triads"}
 
 
 class KeyboardControlState:
@@ -194,7 +214,9 @@ def control_legend_lines():
     time -- and it lives here, beside the bindings, so the two cannot drift.
     """
     return [
-        "Keys",
-        "  space: pause/resume     s: single step",
-        "  -: slower   +: faster    n: normal   q: quit",
-        "  toggle   b: body   e: ellipsoid   v: vectors   t: axes"]
+        "Keys (hold Ctrl)",
+        "  Ctrl+space: pause/resume    Ctrl+s: single step",
+        "  Ctrl+-: slower   Ctrl++: faster   Ctrl+n: normal",
+        "  Ctrl+q: quit",
+        "  toggle  Ctrl+b: body  Ctrl+e: ellipsoid",
+        "          Ctrl+v: vectors  Ctrl+t: axes"]

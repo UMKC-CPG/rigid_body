@@ -23,15 +23,15 @@ def test_starts_at_normal_pace_and_open():
 
 def test_space_toggles_pause_and_resume():
     state = KeyboardControlState(nominal_substeps=10)
-    state.handle_key("space")
+    state.handle_key("Ctrl+space")
     assert state.pace is Pace.PAUSED
-    state.handle_key("space")
+    state.handle_key("Ctrl+space")
     assert state.pace is Pace.NORMAL
 
 
 def test_single_step_re_pauses_after_the_frame():
     state = KeyboardControlState(nominal_substeps=10)
-    state.handle_key("s")
+    state.handle_key("Ctrl+s")
     assert state.pace is Pace.SINGLE_STEP
     # The one-shot: after the loop reads and steps, the pace re-pauses.
     state.advance_after_read()
@@ -40,35 +40,44 @@ def test_single_step_re_pauses_after_the_frame():
 
 def test_slow_fast_and_normal_keys():
     state = KeyboardControlState(nominal_substeps=10)
-    state.handle_key("minus")
+    state.handle_key("Ctrl+minus")
     assert state.pace is Pace.SLOW
-    state.handle_key("plus")
+    state.handle_key("Ctrl+plus")
     assert state.pace is Pace.FAST
-    state.handle_key("n")
+    state.handle_key("Ctrl+n")
     assert state.pace is Pace.NORMAL
 
 
-def test_quit_keys_close_the_window():
-    quit_state = KeyboardControlState(nominal_substeps=10)
-    quit_state.handle_key("q")
-    assert quit_state.closed
+def test_quit_chord_and_the_bare_window_keys_all_close():
+    # The quit chord closes the window.
+    chord_state = KeyboardControlState(nominal_substeps=10)
+    chord_state.handle_key("Ctrl+q")
+    assert chord_state.closed
 
-    escape_state = KeyboardControlState(nominal_substeps=10)
-    escape_state.handle_key("Escape")
-    assert escape_state.closed
+    # And the bare window-close keys still close it, so a window the backend
+    # shuts on its own (plain q/Escape) keeps our closed flag in step.
+    for bare_key in ("q", "Escape"):
+        bare_state = KeyboardControlState(nominal_substeps=10)
+        bare_state.handle_key(bare_key)
+        assert bare_state.closed
 
 
-def test_keys_are_case_insensitive_and_unknown_keys_are_ignored():
+def test_chords_are_case_insensitive_and_bare_command_keys_are_ignored():
     state = KeyboardControlState(nominal_substeps=10)
-    state.handle_key("S")                      # capital still single-steps
+    state.handle_key("Ctrl+S")                 # capital chord still steps
     assert state.pace is Pace.SINGLE_STEP
-    state.handle_key("z")                      # unknown key: no change
-    assert state.pace is Pace.SINGLE_STEP
+    # The whole point of chording: an unchorded command key is ours no more,
+    # so it neither acts here nor is stolen from the backend's own viewer
+    # keys. A bare 's', '+', '-', or 'e' leaves our state untouched.
+    for bare_key in ("s", "plus", "minus", "e", "z"):
+        state.handle_key(bare_key)
+        assert state.pace is Pace.SINGLE_STEP
+        assert state.visible_layers == set(DISPLAY_LAYERS)
 
 
 def test_snapshot_is_a_complete_live_control():
     state = KeyboardControlState(nominal_substeps=7)
-    state.handle_key("minus")
+    state.handle_key("Ctrl+minus")
     controls = state.snapshot()
     assert controls.mode is ControlMode.LIVE
     assert controls.pace is Pace.SLOW
@@ -89,18 +98,18 @@ def test_every_layer_starts_visible():
 
 def test_a_toggle_key_switches_one_layer_off_then_on():
     state = KeyboardControlState(nominal_substeps=10)
-    # 'e' toggles the ellipsoid layer; the others are untouched.
-    state.handle_key("e")
+    # Ctrl+e toggles the ellipsoid layer; the others are untouched.
+    state.handle_key("Ctrl+e")
     assert "ellipsoid" not in state.visible_layers
     assert {"body", "vectors", "triads"} <= state.visible_layers
     # Pressing it again brings the layer back.
-    state.handle_key("e")
+    state.handle_key("Ctrl+e")
     assert "ellipsoid" in state.visible_layers
 
 
 def test_each_layer_key_maps_to_its_own_group():
-    for key, layer in (("b", "body"), ("e", "ellipsoid"),
-                       ("v", "vectors"), ("t", "triads")):
+    for key, layer in (("Ctrl+b", "body"), ("Ctrl+e", "ellipsoid"),
+                       ("Ctrl+v", "vectors"), ("Ctrl+t", "triads")):
         state = KeyboardControlState(nominal_substeps=10)
         state.handle_key(key)
         assert layer not in state.visible_layers
@@ -110,7 +119,7 @@ def test_each_layer_key_maps_to_its_own_group():
 
 def test_toggling_a_layer_is_carried_on_the_snapshot():
     state = KeyboardControlState(nominal_substeps=10)
-    state.handle_key("b")                      # hide the body object
+    state.handle_key("Ctrl+b")                 # hide the body object
     controls = state.snapshot()
     assert "body" not in controls.visible_layers
     assert isinstance(controls.visible_layers, frozenset)
@@ -119,8 +128,8 @@ def test_toggling_a_layer_is_carried_on_the_snapshot():
 def test_a_layer_key_leaves_the_pace_alone():
     # Toggling visibility is orthogonal to the time controls.
     state = KeyboardControlState(nominal_substeps=10)
-    state.handle_key("minus")                  # slow motion
-    state.handle_key("v")                      # hide the vectors
+    state.handle_key("Ctrl+minus")             # slow motion
+    state.handle_key("Ctrl+v")                 # hide the vectors
     assert state.pace is Pace.SLOW
     assert "vectors" not in state.visible_layers
 
@@ -134,8 +143,11 @@ def test_the_legend_names_every_control_key():
     # The time controls are all documented.
     for token in ("space", "pause", "step", "quit"):
         assert token in legend
+    # The legend tells the viewer to hold Ctrl, since every command is
+    # chorded (Section 15.7); without that cue the keys read as bare.
+    assert "ctrl" in legend
     # And the toggles: the word "toggle" plus each layer's own name, so a
-    # viewer can see what b/e/v/t switch without guessing.
+    # viewer can see what the chords switch without guessing.
     assert "toggle" in legend
     for layer_word in ("body", "ellipsoid", "vectors", "axes"):
         assert layer_word in legend

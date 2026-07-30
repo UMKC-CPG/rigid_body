@@ -2854,11 +2854,24 @@ the trajectory (§15.2, Principle 9) — the same read-only discipline the
 pace controls obey. This is the interface answer to Goal 5's density: the
 comparison is available in full, and also decomposable one layer at a time.
 
-The live window binds one mnemonic key to each layer — `b`, `e`, `v`, `t` —
-alongside the time-control keys, and draws a small **key legend** in a
-corner so the whole vocabulary is discoverable without a manual. The legend
-is static text produced beside the bindings, so the keys shown can never
-drift from the keys honored.
+The live window binds every command to a **Ctrl-chorded key**, so that none
+can collide with the viewer keys the graphics backend already claims for
+itself: a viewer found the bare `+`/`-` cycling the backend's axis styles
+and bare `e` closing the window outright. Each layer takes one mnemonic
+chord — `Ctrl+b`, `Ctrl+e`, `Ctrl+v`, `Ctrl+t` — alongside the Ctrl-chorded
+time controls (`Ctrl+space` to pause, `Ctrl+s` to single-step,
+`Ctrl+-`/`Ctrl++` to slow and speed, `Ctrl+n` for normal, `Ctrl+q` to
+quit). Chording is what makes the separation safe rather than lucky: a
+backend that dispatches a keypress by name forms the same `Ctrl+`-prefixed
+string and looks it up in a table that holds only the bare keys, so a
+chorded key matches nothing there and reaches only our handler. The bare
+window-close keys (`q`, `Escape`) are still honored for quit, so a window
+the backend shuts on its own keeps the loop's closed flag in step.
+
+The window also draws a small **key legend** in a corner so the whole
+vocabulary is discoverable without a manual. The legend is static text
+produced beside the bindings, so the keys shown can never drift from the
+keys honored.
 
 ---
 
