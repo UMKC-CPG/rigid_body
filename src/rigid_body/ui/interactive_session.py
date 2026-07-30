@@ -85,6 +85,14 @@ def run_interactive(scenario, renderer, controls_source, sinks=None,
     history = Trajectory.from_retention(scenario.retention)
     presentation = scenario.presentation
 
+    # A run is a fresh trajectory, so the renderer's swept trails (Section
+    # 10.5) must start empty rather than carry over the previous scenario's
+    # trace. The renderer outlives one run; a renderer that keeps no trails
+    # simply does not offer this, so the call is guarded.
+    reset_trails = getattr(renderer, "reset_trails", None)
+    if callable(reset_trails):
+        reset_trails()
+
     start_wall_time = wall_clock() if wall_clock is not None else None
     latest_report = None
     frame_index = 0

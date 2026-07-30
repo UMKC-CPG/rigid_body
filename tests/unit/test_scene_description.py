@@ -237,9 +237,13 @@ def test_the_polhode_is_drawn_on_the_ellipsoid_surface():
     _body, _state, scene = torque_free_scene()
     semi_axes = drawable_named(
         scene, "momental_ellipsoid").geometry.semi_axes
-    polhode_points = drawable_named(scene, "polhode").geometry.points
-    residual = ((polhode_points / semi_axes) ** 2).sum(axis=1)
-    np.testing.assert_allclose(residual, 1.0, atol=1e-9)
+    polhode = drawable_named(scene, "polhode").geometry
+    # The whole drawn loop lies on the surface...
+    loop_residual = ((polhode.loop_points / semi_axes) ** 2).sum(axis=1)
+    np.testing.assert_allclose(loop_residual, 1.0, atol=1e-9)
+    # ...and so does the current contact point the trail head rides.
+    head_residual = ((polhode.current_point / semi_axes) ** 2).sum()
+    assert head_residual == pytest.approx(1.0, abs=1e-9)
 
 
 def test_ellipsoid_detail_defaults_to_none_and_is_carried_through():

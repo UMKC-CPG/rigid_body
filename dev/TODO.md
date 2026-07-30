@@ -567,14 +567,32 @@ suite in the project's `rigid` venv: `pytest tests/ -v`.
       both. 10 new tests (the control record, the scene passthrough, the
       monotone level->count map, and the keyboard stepping, clamping, and
       orthogonality to the pace and layers). 319 total.
-- [ ] Deferred interactive refinements: the herpolhode
-      swept trail + bounding band (now feasible with the driver feeding
-      frames); true Platonic body meshes; live scenario editing through the
-      UI (currently pending_edit stays None -- time, layer, and mesh
-      controls only); window-X close detection (v1 quits on Ctrl+q, with
-      bare q/Escape as a safety net); and a live on/off marker in the key
-      legend (currently a static reference; the toggle's effect is seen in
-      the scene itself).
+- [x] Polhode drawn on the ellipsoid surface (§10.4). poinsot.polhode
+      samples the path of omega at the angular-velocity scale, so the drawn
+      curve floated a factor sqrt(2T) outside the momental ellipsoid a viewer
+      sees. _polhode_geometry rescales the loop to the contact point rho =
+      omega/sqrt(2T), where rho . I . rho = 1 places every point exactly on
+      the surface; the herpolhode band still reads the omega-scale samples it
+      rescales itself. 1 new test (every drawn point on the surface),
+      confirmed visually on the dzhanibekov scenario. 320 total.
+- [x] Herpolhode and polhode swept trails (§10.5, §14.2). One vector, omega,
+      draws the polhode on the rolling ellipsoid and the herpolhode on the
+      fixed plane at once (Goal 5); each drawable carries its current contact
+      point and the renderer accumulates it across frames -- the one piece of
+      frame history it holds, reset per run by the driver. The polhode shows
+      its analytic loop faintly with a bright comet trail on top; the
+      herpolhode, drawable from no single instant, is only the trace, filling
+      the band whose two bounding circles are drawn. The window is bounded
+      and fades tail-to-head (a moving comet, not a smeared band); paused and
+      replayed frames dedup, so a still frame keeps its trail. 8 new tests
+      (accumulate/dedup/bound, band basis and circle geometry, a GL
+      accumulate-then-reset, and the driver reset). 328 total.
+- [ ] Deferred interactive refinements: true Platonic body
+      meshes; live scenario editing through the UI (currently pending_edit
+      stays None -- time, layer, and mesh controls only); window-X close
+      detection (v1 quits on Ctrl+q, with bare q/Escape as a safety net);
+      and a live on/off marker in the key legend (currently a static
+      reference; the toggle's effect is seen in the scene itself).
 
 ---
 

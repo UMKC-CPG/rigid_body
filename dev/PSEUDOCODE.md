@@ -2558,6 +2558,26 @@ quantity behind it does not go in the scene. Decorative geometry and
 cosmetic flourishes are what Principle 5 rules out, because a student cannot
 trace them to anything.
 
+**The swept trails (§10.5).** One physical vector, `omega`, draws the
+polhode on the rolling ellipsoid and the herpolhode on the fixed plane at
+the same instant (Goal 5), but a single frame carries only where the contact
+point sits *now*. So the polhode and herpolhode drawables each carry their
+current contact point, and the **renderer** accumulates it across frames
+into a growing trace — the one piece of frame-to-frame history the renderer
+holds, reset at each run's start (§1.2) so a new scenario does not begin
+smeared with the last one's trail. The polhode's full closed loop is known
+analytically and drawn faintly on the ellipsoid surface (rescaled to the
+contact point, §14.5) as the fixed track; over it the accumulated arc is
+drawn brightly with a head at the current point, so a viewer watches the
+loop being drawn. The herpolhode cannot be drawn from one instant at all —
+it is only the accumulated trace, filling the annular band (§10.5) whose two
+bounding circles are drawn as its fixed frame. The window is **bounded and
+fades** from tail to head, so the never-closing herpolhode reads as a moving
+comet rather than smearing its whole band solid. A paused or replayed frame
+recomputes the identical point, which is dropped, so a still frame does not
+consume the window. None of this touches the state: the trail is a read of
+past contact points, held for drawing only (Principle 9).
+
 ### 14.3 A palette maps role to encoding
 
 A palette maps the *role* an item plays to the *visual encoding* it is

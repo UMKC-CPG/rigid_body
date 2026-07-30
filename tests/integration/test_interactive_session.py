@@ -120,6 +120,37 @@ def test_advances_and_renders_each_frame():
     assert not np.array_equal(renderer.states[0], renderer.states[-1])
 
 
+class TrailResettingRenderer(FakeRenderer):
+    """A fake renderer that counts how often its swept trails are reset."""
+
+    def __init__(self):
+        super().__init__()
+        self.reset_count = 0
+
+    def reset_trails(self):
+        self.reset_count += 1
+
+
+def test_each_run_resets_the_renderer_swept_trails():
+    # A run is a fresh trajectory, so the driver clears the renderer's swept
+    # trails once at the start (Section 10.5) rather than carrying the last
+    # scenario's trace into the new one.
+    scenario = make_scenario(nominal_substeps=2)
+    renderer = TrailResettingRenderer()
+    run_interactive(scenario, renderer, ScriptedControls([normal()] * 3))
+    assert renderer.reset_count == 1
+
+
+def test_a_renderer_without_trails_runs_unbothered():
+    # The reset is optional: a renderer that keeps no trails (like the plain
+    # fake) simply does not offer reset_trails, and the driver must not fail.
+    scenario = make_scenario(nominal_substeps=2)
+    renderer = FakeRenderer()
+    assert not hasattr(renderer, "reset_trails")
+    run_interactive(scenario, renderer, ScriptedControls([normal()] * 2))
+    assert len(renderer.states) == 2
+
+
 def test_pause_holds_the_motion_but_still_redraws():
     scenario = make_scenario(nominal_substeps=2)
     renderer = FakeRenderer()

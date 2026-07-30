@@ -13,6 +13,8 @@ verify the render where they can and never fail merely for lack of a
 display.
 """
 
+from collections import deque
+
 import numpy as np
 import pytest
 
@@ -30,7 +32,8 @@ from rigid_body.render import palettes as pal
 from rigid_body.render.vedo_renderer import (
     VedoRenderer, _ellipsoid_ring_points, _ellipsoid_ring_counts,
     _scale_to_display_size, _ELLIPSOID_DEFAULT_DETAIL,
-    _BODY_DISPLAY_FRACTION)
+    _BODY_DISPLAY_FRACTION, _updated_trail, _rotated_trail,
+    _orthonormal_basis, _circle_points, _TRAIL_WINDOW)
 from rigid_body.dynamics.time_control import (
     ELLIPSOID_DETAIL_MIN, ELLIPSOID_DETAIL_MAX)
 
@@ -158,6 +161,73 @@ def test_the_body_mesh_scales_to_the_display_fraction():
 
 
 # --------------------------------------------------------------------
+# The swept trails: accumulation, and the herpolhode band geometry
+# (Section 10.5, pure -- no GL context needed)
+# --------------------------------------------------------------------
+
+def test_a_trail_accumulates_dedups_repeats_and_stays_bounded():
+    trail = deque(maxlen=3)
+    _updated_trail(trail, np.array([0.0, 0.0, 0.0]))
+    # A repeated point (a paused or replayed frame) does not grow the trail.
+    _updated_trail(trail, np.array([0.0, 0.0, 0.0]))
+    assert len(trail) == 1
+    # A genuinely new point extends it...
+    _updated_trail(trail, np.array([1.0, 0.0, 0.0]))
+    assert len(trail) == 2
+    # ...and the window is bounded: old points age off the tail.
+    for step in range(5):
+        _updated_trail(trail, np.array([float(step), 1.0, 0.0]))
+    assert len(trail) == 3
+
+
+def test_the_trail_window_is_a_positive_bound():
+    # The renderer keeps a bounded, most-recent stretch of the trail so the
+    # herpolhode reads as a moving comet rather than a solid band.
+    assert _TRAIL_WINDOW > 0
+
+
+def test_a_rotated_trail_is_empty_for_no_history_and_rotates_otherwise():
+    assert _rotated_trail(None, np.eye(3)).shape == (0, 3)
+    assert _rotated_trail(deque(), np.eye(3)).shape == (0, 3)
+    trail = deque([np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])])
+    # A quarter turn about z sends x->y and y->-x; the whole trail rotates.
+    quarter_turn = np.array([[0.0, -1.0, 0.0],
+                             [1.0, 0.0, 0.0],
+                             [0.0, 0.0, 1.0]])
+    rotated = _rotated_trail(trail, quarter_turn)
+    np.testing.assert_allclose(
+        rotated, [[0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]], atol=1e-12)
+
+
+def test_the_band_basis_is_orthonormal_and_in_the_plane():
+    for normal in (np.array([0.0, 0.0, 1.0]),
+                   np.array([1.0, 2.0, -2.0]),
+                   np.array([0.9, 0.0, 0.1])):
+        first_axis, second_axis = _orthonormal_basis(normal)
+        unit_normal = normal / np.linalg.norm(normal)
+        # Unit length, mutually perpendicular, and both spanning the plane.
+        assert np.linalg.norm(first_axis) == pytest.approx(1.0)
+        assert np.linalg.norm(second_axis) == pytest.approx(1.0)
+        assert np.dot(first_axis, second_axis) == pytest.approx(0.0, abs=1e-12)
+        assert np.dot(first_axis, unit_normal) == pytest.approx(0.0, abs=1e-12)
+        assert np.dot(second_axis, unit_normal) == pytest.approx(
+            0.0, abs=1e-12)
+
+
+def test_a_band_circle_lies_in_the_plane_at_the_given_radius():
+    normal = np.array([0.0, 0.0, 1.0])
+    center = 2.0 * normal                      # height 2 above the origin
+    first_axis, second_axis = _orthonormal_basis(normal)
+    radius = 3.0
+    circle = _circle_points(center, first_axis, second_axis, radius)
+    # Every sample sits at the band radius from the centre...
+    distances = np.linalg.norm(circle - center, axis=1)
+    np.testing.assert_allclose(distances, radius, atol=1e-12)
+    # ...and in the plane (constant height along the normal).
+    np.testing.assert_allclose(circle @ normal, 2.0, atol=1e-12)
+
+
+# --------------------------------------------------------------------
 # The render actually rasterizes the scene
 # --------------------------------------------------------------------
 
@@ -191,6 +261,28 @@ def test_applied_torque_scene_renders_without_poinsot():
     image = render_to_array(scene, state, pal.LIGHT_PALETTE, "single")
     foreground_fraction, _colors = foreground_and_colors(image)
     assert foreground_fraction > 0.005
+
+
+def test_swept_trails_accumulate_across_frames_then_reset_clears_them():
+    # Rendering a torque-free scene populates the polhode and herpolhode
+    # swept trails (Section 10.5); reset_trails -- which the driver calls at
+    # each run start -- clears them, so a new run does not begin smeared with
+    # the previous one's trace.
+    scene, state = torque_free_scene()
+    try:
+        renderer = VedoRenderer(
+            pal.LIGHT_PALETTE, layout="side_by_side", size=(320, 240),
+            offscreen=True, background=_TEST_BACKGROUND)
+    except Exception as problem:                    # pragma: no cover
+        pytest.skip(f"no offscreen render context: {problem}")
+    try:
+        renderer.render(scene, state)
+        assert len(renderer._trails.get("polhode", [])) >= 1
+        assert len(renderer._trails.get("herpolhode", [])) >= 1
+        renderer.reset_trails()
+        assert renderer._trails == {}
+    finally:
+        renderer.close()
 
 
 def test_successive_frames_render_without_error():

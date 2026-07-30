@@ -33,8 +33,8 @@ from rigid_body.dynamics.state import (
 from rigid_body.dynamics.time_control import DISPLAY_LAYERS
 from rigid_body.geometry.reference_frames import Frame
 from rigid_body.geometry.poinsot import (
-    momental_ellipsoid, invariable_plane, polhode, herpolhode_point,
-    herpolhode_bounds)
+    momental_ellipsoid, invariable_plane, polhode, poinsot_contact_point,
+    herpolhode_point, herpolhode_bounds)
 
 
 # The number of samples the closed polhode curve is drawn with. Detail is
@@ -112,6 +112,25 @@ class Drawable(NamedTuple):
     coordinate_frame: Optional[Frame]
     label: str
     scale_note: Optional[str] = None
+
+
+class PolhodeGeometry(NamedTuple):
+    """The polhode's drawable geometry at one instant (Section 10.4).
+
+    ``loop_points`` is the full closed curve, already rescaled onto the
+    momental ellipsoid's surface (the contact-point scale of Section 14.5),
+    drawn faintly as the fixed track omega will trace. ``current_point`` is
+    where the contact point sits *now* on that loop, which the renderer
+    accumulates frame by frame into the bright swept trail and marks with a
+    head, so a viewer watches omega draw the polhode out in lockstep with
+    the herpolhode in the other panel (VISION Goal 5). ``kind`` names how the
+    curve was produced (``"point"`` for a steady spin whose polhode is a
+    single point, else ``"circle"``/``"elliptic"``/``"numeric"``).
+    """
+
+    loop_points: np.ndarray
+    current_point: np.ndarray
+    kind: str
 
 
 class HerpolhodeGeometry(NamedTuple):
@@ -284,7 +303,7 @@ def build_scene(state, body, monitor, presentation=None, report=None,
     if _is_torque_free(monitor):
         polhode_curve = polhode(body, state, polhode_sample_count)
         drawables.append(Drawable(
-            geometry=_polhode_on_ellipsoid(polhode_curve, state, body),
+            geometry=_polhode_geometry(polhode_curve, state, body),
             role="polhode",
             panel=DrawablePanel.BOTH, coordinate_frame=Frame.BODY,
             label="polhode: omega in body"))
@@ -382,8 +401,8 @@ def _is_torque_free(monitor):
     return not torque_models
 
 
-def _polhode_on_ellipsoid(polhode_curve, state, body):
-    """Rescale the polhode from omega scale onto the ellipsoid surface.
+def _polhode_geometry(polhode_curve, state, body):
+    """Bundle the polhode for drawing: the loop, the trail head, and kind.
 
     ``geometry.poinsot.polhode`` samples the path of ``omega`` itself, at
     the angular-velocity scale; the point that actually touches the momental
@@ -391,16 +410,21 @@ def _polhode_on_ellipsoid(polhode_curve, state, body):
     a factor ``1 / sqrt(2T)`` smaller. Because ``2T`` is conserved along the
     polhode, that single factor carries the whole curve onto the surface,
     where ``rho . I . rho = 1`` puts every point exactly on the inertia
-    ellipsoid. Drawing at this scale is what lets the polhode sit on the
-    ellipsoid a viewer sees, rather than float outside it at the raw ``omega``
-    radius. The returned curve keeps the original's ``kind``; only the
-    sample coordinates are rescaled.
+    ellipsoid -- so the polhode sits on the ellipsoid a viewer sees rather
+    than floating outside it at the raw ``omega`` radius. The current contact
+    point is carried alongside as the trail head the renderer accumulates
+    (Section 10.4); it is already on the surface (``poinsot_contact_point``
+    returns ``rho`` directly). Only coordinates are rescaled; the curve's
+    ``kind`` is preserved.
     """
     twice_kinetic_energy = 2.0 * kinetic_energy(state, body)
     contact_point_scale = 1.0 / np.sqrt(twice_kinetic_energy)
-    rescaled_points = (
+    loop_points = (
         np.asarray(polhode_curve.points, dtype=float) * contact_point_scale)
-    return polhode_curve._replace(points=rescaled_points)
+    return PolhodeGeometry(
+        loop_points=loop_points,
+        current_point=poinsot_contact_point(state, body),
+        kind=polhode_curve.kind)
 
 
 def _herpolhode_geometry(state, body, polhode_points, plane):

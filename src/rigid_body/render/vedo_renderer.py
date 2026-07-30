@@ -29,6 +29,8 @@ server, which is what lets a render be captured and checked pixel by pixel
 (ARCHITECTURE Section 9.3).
 """
 
+from collections import deque
+
 import numpy as np
 import vedo
 
@@ -73,6 +75,24 @@ _ELLIPSOID_PARALLELS_PER_LEVEL = 2   # parallels added per level above 1
 _ELLIPSOID_MERIDIANS_PER_LEVEL = 4   # meridians added per level above 1
 _ELLIPSOID_DEFAULT_DETAIL = 2        # the shipped look: 5 parallels, 8 mer.
 _ELLIPSOID_RING_SAMPLES = 64         # points per ring, for a smooth curve
+
+# The swept trails: one physical vector, omega, draws the polhode on the
+# rolling ellipsoid and the herpolhode on the fixed invariable plane at the
+# same instant (VISION Goal 5). A single frame carries only where omega sits
+# now, so the renderer accumulates that contact point across frames into a
+# growing trace. The window is bounded and fades from tail to head, so the
+# herpolhode -- which never quite closes and slowly fills its band (Section
+# 10.5) -- reads as a moving comet rather than smearing the whole band solid.
+_TRAIL_WINDOW = 200          # most recent contact points kept per trail
+_TRAIL_FADE_BANDS = 6        # alpha steps from the faint tail to the head
+_TRAIL_MIN_ALPHA = 0.12      # opacity of the oldest retained band
+_TRAIL_HEAD_RADIUS_FRACTION = 0.035  # comet-head sphere, x reference size
+_BAND_CIRCLE_SAMPLES = 96    # points per herpolhode bounding circle
+
+# The full polhode loop and the herpolhode's bounding circles are drawn as
+# faint context beneath the bright trail, at this fraction of their role's
+# own opacity, so the moving trace stands out against the fixed track.
+_TRAIL_CONTEXT_ALPHA_FACTOR = 0.35
 
 # The body object lives in physical space (metres) while the momental
 # ellipsoid lives in the angular-velocity space of 1/sqrt(I); there is no
@@ -137,6 +157,10 @@ class VedoRenderer:
         # before the next frame is built.
         self._panel_actors = [[] for _ in self.panel_frames]
         self._camera_reset_done = False
+        # The accumulated swept trails, keyed by role ("polhode",
+        # "herpolhode"): a bounded deque of contact points in the trace's
+        # native frame, extended once per frame and reset between runs.
+        self._trails = {}
 
     # ----------------------------------------------------------------
     # The per-frame entry point
@@ -145,6 +169,9 @@ class VedoRenderer:
     def render(self, scene, state):
         """Draw one frame of ``scene`` at ``state`` into every panel."""
         rotation = quaternion_to_matrix(state.body_to_space_quaternion)
+        # Extend the swept trails with this frame's contact points before the
+        # panels read them, once per frame rather than once per panel.
+        self._accumulate_trails(scene)
         # The honest footnote of what is drawn off its physical scale
         # (Section 14.5), gathered from the drawables the scene now shows --
         # so a note appears and disappears with its layer (Section 15.7).
@@ -183,6 +210,38 @@ class VedoRenderer:
     def close(self):
         """Release the render window."""
         self.plotter.close()
+
+    def reset_trails(self):
+        """Forget every accumulated trail, so a new run starts clean.
+
+        The interactive driver calls this at the start of each scenario
+        (PSEUDOCODE Section 1.2): the renderer outlives one run, so without a
+        reset a new body's trace would begin smeared with the previous run's
+        swept points until the bounded window aged them out. A renderer used
+        for a single run never needs it, which is why the driver calls it
+        only if the renderer offers it.
+        """
+        self._trails = {}
+
+    def _accumulate_trails(self, scene):
+        """Append this frame's contact points to the polhode/herpolhode trail.
+
+        Each Poinsot trace carries the current contact point in its native
+        frame; accumulating it across frames is what turns the single-instant
+        herpolhode point into a swept curve and lets the polhode draw itself
+        out on the ellipsoid (Section 10.5). Consecutive duplicates are
+        dropped, so a paused or replayed frame -- which recomputes the very
+        same point -- does not flood the bounded window and shrink the trail
+        away to nothing.
+        """
+        for drawable in scene.drawables:
+            if drawable.role not in ("polhode", "herpolhode"):
+                continue
+            current_point = np.asarray(
+                drawable.geometry.current_point, dtype=float)
+            trail = self._trails.setdefault(
+                drawable.role, deque(maxlen=_TRAIL_WINDOW))
+            _updated_trail(trail, current_point)
 
     # ----------------------------------------------------------------
     # Building the actors of one panel
@@ -224,13 +283,16 @@ class VedoRenderer:
             return _ellipsoid_actors(
                 drawable.geometry, encoding, view, ring_counts)
         if role == "polhode":
-            return _curve_actors(drawable.geometry.points, encoding, view)
+            return _polhode_actors(
+                drawable.geometry, encoding, view, reference_scale,
+                self._trails.get("polhode"))
         if role == "invariable_plane":
             return _plane_actors(
                 drawable.geometry, encoding, view, reference_scale)
         if role == "herpolhode":
             return _herpolhode_actors(
-                drawable.geometry, encoding, view, reference_scale)
+                drawable.geometry, encoding, view, reference_scale,
+                self._trails.get("herpolhode"))
         if role in ("angular_velocity", "angular_momentum"):
             length = (_OMEGA_ARROW_LENGTH if role == "angular_velocity"
                       else _MOMENTUM_ARROW_LENGTH)
@@ -462,15 +524,87 @@ def _ellipsoid_ring_points(semi_axes, parallel_count, meridian_count):
         yield arc * semi_axes, False
 
 
-def _curve_actors(points, encoding, view):
-    """Build a polyline (or a single marker) for a curve of body points."""
-    rotated = np.asarray(points, dtype=float) @ view.T
-    if rotated.shape[0] == 1:
-        marker = vedo.Point(rotated[0]).c(encoding.color)
-        return [marker]
-    line = vedo.Line(rotated, lw=encoding.line_weight).c(encoding.color)
-    line.alpha(encoding.opacity)
-    return [_apply_line_style(line, encoding)]
+def _polhode_actors(geometry, encoding, view, reference_scale, trail):
+    """Build the polhode: a faint full loop under a bright swept trail.
+
+    The polhode is the closed track the contact point traces on the ellipsoid
+    (Section 10.4). The full analytic loop is drawn faintly as the fixed path
+    omega will follow, and over it the accumulated ``trail`` draws the arc
+    omega has actually swept this run, tipped with a comet head at the current
+    contact point -- so a viewer watches the loop being drawn in lockstep with
+    the herpolhode in the space panel (VISION Goal 5). A steady spin has a
+    single-point polhode: no loop and no trail, just the point where omega
+    rests.
+    """
+    loop = np.asarray(geometry.loop_points, dtype=float) @ view.T
+    head_point = view @ np.asarray(geometry.current_point, dtype=float)
+    if loop.shape[0] == 1:
+        return [vedo.Sphere(
+            head_point,
+            r=_TRAIL_HEAD_RADIUS_FRACTION * reference_scale
+        ).c(encoding.color)]
+    faint_loop = vedo.Line(loop, lw=encoding.line_weight).c(encoding.color)
+    faint_loop.alpha(encoding.opacity * _TRAIL_CONTEXT_ALPHA_FACTOR)
+    actors = [_apply_line_style(faint_loop, encoding)]
+    actors.extend(_trail_actors(
+        _rotated_trail(trail, view), head_point, encoding, reference_scale))
+    return actors
+
+
+def _updated_trail(trail, point):
+    """Append ``point`` to a trail deque unless it repeats the last one.
+
+    A paused or replayed frame recomputes the identical contact point; the
+    scene is deterministic, so an exact-equality check drops those repeats
+    and keeps a still frame from filling the bounded window with one point
+    (Section 10.5).
+    """
+    if trail and np.array_equal(trail[-1], point):
+        return
+    trail.append(np.array(point, dtype=float))
+
+
+def _rotated_trail(trail, view):
+    """Rotate an accumulated trail (native-frame points) into a panel view."""
+    if not trail:
+        return np.empty((0, 3))
+    return np.asarray(list(trail), dtype=float) @ view.T
+
+
+def _trail_actors(rotated_points, head_point, encoding, reference_scale):
+    """Build a fading polyline for a swept trail, tipped with a comet head.
+
+    The trail fades from a faint tail to a bright head so the eye reads the
+    direction of travel: the polyline is split into a few contiguous bands
+    whose opacity climbs from ``_TRAIL_MIN_ALPHA`` at the oldest end to full
+    at the newest, and a small sphere at ``head_point`` marks where the
+    contact point sits right now. The trail keeps its role's dash pattern, so
+    the polhode and herpolhode stay distinct without relying on color
+    (Section 14.3).
+    """
+    actors = []
+    point_count = len(rotated_points)
+    if point_count >= 2:
+        boundaries = np.unique(
+            np.linspace(0, point_count - 1, _TRAIL_FADE_BANDS + 1)
+            .round().astype(int))
+        band_count = len(boundaries) - 1
+        for band_index in range(band_count):
+            segment = rotated_points[
+                boundaries[band_index]:boundaries[band_index + 1] + 1]
+            if len(segment) < 2:
+                continue
+            # The newest band is fully opaque; the oldest sits at the floor.
+            fraction = (band_index + 1) / band_count
+            alpha = (_TRAIL_MIN_ALPHA
+                     + (1.0 - _TRAIL_MIN_ALPHA) * fraction)
+            band = vedo.Line(segment, lw=encoding.line_weight + 1)
+            band.c(encoding.color).alpha(alpha)
+            actors.append(_apply_line_style(band, encoding))
+    head = vedo.Sphere(
+        head_point, r=_TRAIL_HEAD_RADIUS_FRACTION * reference_scale)
+    actors.append(head.c(encoding.color))
+    return actors
 
 
 def _plane_actors(plane, encoding, view, reference_scale):
@@ -484,19 +618,72 @@ def _plane_actors(plane, encoding, view, reference_scale):
     return [sheet]
 
 
-def _herpolhode_actors(geometry, encoding, view, reference_scale):
-    """Build the herpolhode's current contact point in the invariable plane.
+def _herpolhode_actors(geometry, encoding, view, reference_scale, trail):
+    """Build the herpolhode: the bounding band under its swept trail.
 
-    The herpolhode is a trace the contact point sweeps out over time; a
-    single frame carries only its current position, so this draws that
-    point as a marker in the plane. Accumulating the swept trail (and
-    drawing the bounding band of Section 10.5 around it) is a stateful
-    renderer refinement left for later, when the frame-loop driver feeds
-    successive frames.
+    The herpolhode is generally open and slowly fills an annulus in the fixed
+    invariable plane (Section 10.5). Its confinement is shown by the two faint
+    concentric bounding circles, and the accumulated ``trail`` -- the contact
+    point seen in space, gathered frame by frame -- draws the trace filling in
+    between them, tipped with a comet head at where omega sits now. Unlike the
+    polhode, this curve cannot be drawn from a single instant, which is why it
+    must be accumulated (VISION Goal 5).
     """
-    current = view @ np.asarray(geometry.current_point, dtype=float)
-    marker = vedo.Point(current).c(encoding.color)
-    return [marker]
+    actors = _band_circle_actors(geometry, encoding, view)
+    head_point = view @ np.asarray(geometry.current_point, dtype=float)
+    actors.extend(_trail_actors(
+        _rotated_trail(trail, view), head_point, encoding, reference_scale))
+    return actors
+
+
+def _band_circle_actors(geometry, encoding, view):
+    """Draw the two concentric circles that bound the herpolhode's band.
+
+    The band lies in the invariable plane at the fixed height the contact
+    point rides above the origin (Section 10.3); its inner and outer radii
+    are the extremes of that trace (Section 10.5). The circles are drawn
+    faintly, as the fixed frame the swept trail fills in. A symmetric top's
+    band collapses to a single circle (equal radii); a zero inner radius is
+    skipped rather than drawn as a degenerate point.
+    """
+    normal = view @ np.asarray(geometry.plane_normal, dtype=float)
+    center = geometry.plane_distance * normal
+    first_axis, second_axis = _orthonormal_basis(normal)
+    actors = []
+    for radius in (geometry.inner_radius, geometry.outer_radius):
+        if radius <= 0.0:
+            continue
+        circle = _circle_points(center, first_axis, second_axis, radius)
+        line = vedo.Line(circle, closed=True, lw=encoding.line_weight)
+        line.c(encoding.color).alpha(
+            encoding.opacity * _TRAIL_CONTEXT_ALPHA_FACTOR)
+        actors.append(line)
+    return actors
+
+
+def _circle_points(center, first_axis, second_axis, radius):
+    """Sample a circle of ``radius`` in the plane spanned by two unit axes."""
+    angle = np.linspace(0.0, 2.0 * np.pi, _BAND_CIRCLE_SAMPLES)
+    return (center
+            + radius * (np.outer(np.cos(angle), first_axis)
+                        + np.outer(np.sin(angle), second_axis)))
+
+
+def _orthonormal_basis(normal):
+    """Return two unit vectors spanning the plane perpendicular to ``normal``.
+
+    A reference axis not nearly parallel to the normal is crossed with it for
+    the first in-plane axis; a second cross product gives the third leg, so
+    the pair is orthonormal and spans the plane whatever the normal points at.
+    """
+    normal = np.asarray(normal, dtype=float)
+    normal = normal / np.linalg.norm(normal)
+    reference = (np.array([1.0, 0.0, 0.0]) if abs(normal[0]) < 0.9
+                 else np.array([0.0, 1.0, 0.0]))
+    first_axis = np.cross(normal, reference)
+    first_axis = first_axis / np.linalg.norm(first_axis)
+    second_axis = np.cross(normal, first_axis)
+    return first_axis, second_axis
 
 
 def _vector_actors(vector, encoding, view, display_length, label,
