@@ -30,10 +30,13 @@ import os
 import sys
 from datetime import datetime
 
+# realpath, not abspath: this script is normally run through a
+# symbolic link in the physdemo suite's bin/ directory, and the
+# package must be found beside the real file, not beside the link.
 # The package lives one directory up from this script (in ``src/``); put it
 # on the path so ``rigid_body`` imports resolve when run directly.
 _SOURCE_DIRECTORY = os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__)))
+    os.path.dirname(os.path.realpath(__file__)))
 if _SOURCE_DIRECTORY not in sys.path:
     sys.path.insert(0, _SOURCE_DIRECTORY)
 
