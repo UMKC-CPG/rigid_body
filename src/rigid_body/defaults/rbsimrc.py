@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Resource-control defaults for ``rbsim.py`` (the ``XYZrc.py`` idiom).
+"""Resource-control defaults for ``rbsim`` (the ``XYZrc.py`` idiom).
 
 This file holds what is machine-dependent and rarely changed for an
 interactive run -- the window size and which presentation to use by default
@@ -8,8 +8,9 @@ interactive run -- the window size and which presentation to use by default
 Section 7, any value that influences the physics lives in the scenario file,
 never here. ARCHITECTURE Section 9.3 measured the rendering budget: window
 area is the scarce resource, so a window near 1280 x 960 sustains a
-comfortably interactive frame rate. A user may keep a personal copy of this
-file on ``$RIGID_BODY_RC`` to override the shipped defaults.
+comfortably interactive frame rate. It is looked up first in the working directory, then
+in ``$RIGID_BODY_RC``, then here, inside the package (DESIGN Section
+15.2); ``rbsim --write-rc`` copies it to the working directory to edit.
 """
 
 

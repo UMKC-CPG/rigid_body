@@ -13,7 +13,6 @@ script's testable core, ``run_batch_job``:
   identical output.
 """
 
-import importlib.util
 import os
 
 import numpy as np
@@ -29,14 +28,9 @@ from rigid_body.scenario.serialization import (
 from rigid_body.sinks import hdf5_sink as h5sink
 
 
-# Load the entry script by path; scripts/ is not an importable package.
-_RBBATCH_PATH = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), "..", "..",
-    "src", "scripts", "rbbatch.py"))
-_spec = importlib.util.spec_from_file_location(
-    "rbbatch_script", _RBBATCH_PATH)
-rbbatch = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(rbbatch)
+# The command's body is a module in the package (ARCHITECTURE 3.9);
+# the script in src/scripts/ is only a front for it.
+from rigid_body.cli import rbbatch  # noqa: E402
 
 
 def write_scenario(path, torque_models=None):

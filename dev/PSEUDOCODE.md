@@ -90,6 +90,7 @@ is an implementation detail of the code level, not of this one.
 | 13 | Trajectory retention | §12 | written |
 | 14 | Scene description | §13 | written |
 | 15 | Controls and time | §14 | written |
+| 16 | Entry points and first-run support | §15 | written |
 
 ---
 
@@ -2931,7 +2932,225 @@ keys honored.
 
 ---
 
-With §15 the chain is complete from top to bottom: VISION fixed the goals,
+## 16. Entry Points and First-Run Support
+
+Specifies DESIGN §15. Governs `src/rigid_body/cli/rbsim.py`,
+`cli/rbbatch.py`, `cli/support.py`, `render/offscreen.py`, the fronts
+`src/scripts/rbsim.py` and `src/scripts/rbbatch.py`, and the `[project]`
+tables of `pyproject.toml`.
+
+### 16.1 Seam inventory
+
+The two scripts exist and work; this section moves them and adds to
+them. What each holds today, and where it goes:
+
+| Today in `scripts/rbsim.py`, `rbbatch.py` | Goes to | Note |
+| --- | --- | --- |
+| module docstring | `cli/` module | documentation preserved whole |
+| `run_interactive_job`, `resolve_palette`, | `cli/rbsim.py` | unchanged |
+| `_FrameSavingRenderer` | | except 16.4 |
+| `run_batch_job`, `BatchResult`, | `cli/rbbatch.py` | unchanged |
+| `default_output_path`, `report` | | |
+| `_BUILTIN_RC_DEFAULTS` | stays with its `cli` module | last resort |
+| `_load_rc_defaults()` (import by name) | `support.load_rc_defaults` | |
+| | | by path; 16.2 |
+| `ScriptSettings` | `cli/` module | takes `argv`; no longer logs |
+| `ScriptSettings.record_command_line` | module-level | called by the |
+| | `record_command()` | fronts only |
+| `main()` | `main(argv=None) -> int` | 16.3 |
+| `sys.path` insert from the resolved path | stays in the script | |
+| top-level imports of the renderer | inside the functions | 16.4 |
+| `rbsimrc.py`, `rbbatchrc.py` | `rigid_body/defaults/` | |
+| `scenarios/*.toml` | `rigid_body/examples/`; link kept | |
+
+Consumed unchanged: `load_scenario` (§12), `run_interactive_session`
+(§1.2), the batch loop (§1.3), `VedoRenderer` (§14), the controls
+sources (§15). The tests that loaded the scripts by file path now import
+the `cli` modules, which is where the functions they call live.
+
+### 16.2 Shared support (`cli/support.py`)
+
+```
+PACKAGE_DEFAULTS_DIR = dirname(resolved(support.py)) / ".." / "defaults"
+UTILITY_FLAGS = ("-h", "--help", "--examples", "--write-rc", "--check")
+
+function load_rc_defaults(rc_filename, builtin_defaults) -> dict:
+    # DESIGN 15.2. By PATH, from an explicit list; never through sys.path.
+    for directory in [cwd, $RIGID_BODY_RC (if set), PACKAGE_DEFAULTS_DIR]:
+        if exists(directory / rc_filename):
+            load that file as a module
+            return its parameters_and_defaults()
+    return copy of builtin_defaults          # a damaged installation
+
+function record_command():
+    if any flag of UTILITY_FLAGS in sys.argv: return       # not runs
+    try: append the dated argv block to ./command
+    except OSError: one line on stderr; continue           # CLAUDE.md
+
+function example_files() -> dict name -> path:
+    # importlib.resources.files("rigid_body.examples"), every *.toml,
+    # keyed by stem, in name order.
+
+function locate_scenario(argument) -> path:
+    if exists(argument): return argument              # a real file wins
+    if argument has no directory part:
+        stem = argument without a trailing ".toml"
+        if stem in example_files():
+            note on stderr: "using the packaged example <path>"
+            return example_files()[stem]
+    raise FileNotFoundError(
+        "<argument>: no such scenario. Packaged examples: <names>. Run "
+        "one by name (rbsim <name>), or copy them here with "
+        "rbsim --examples.")
+
+function copy_without_overwriting(sources, directory) -> int:
+    try: create directory if missing
+    for source in sources:
+        target = directory / basename(source)
+        if exists(target): print "kept   <target> (already here)"
+        else:              copy; print "wrote  <target>"
+    on OSError: print "cannot write in <directory> (<why>); choose a
+        directory you can write, for example: rbsim --examples
+        ~/rigid-body-runs"; return 1
+    return 0
+
+function copy_examples(directory) -> int
+function copy_rc_file(rc_filename, directory) -> int
+
+function self_check(run_interactive_job) -> int:      # writes no file
+    print python version, platform, and for each declared dependency
+        its installed version or "MISSING"
+    if any MISSING: print RESULT: FAIL -- <which>; return 1
+    try:
+        prepare_offscreen()                                  # 16.4
+        renderer = VedoRenderer(LIGHT_PALETTE, size=(640, 480),
+                                offscreen=True)
+        run_interactive_job(example_files()["dzhanibekov"], frames=3,
+                            offscreen=True, renderer=renderer)
+        image = renderer.screenshot(as_array=True); renderer.close()
+    except Exception as problem:
+        print RESULT: FAIL -- <type>: <problem>; return 1
+    if image is uniform:
+        print RESULT: FAIL -- the picture is blank: no working OpenGL
+            context for offscreen drawing on this computer; return 1
+    print RESULT: PASS; return 0
+```
+
+`self_check` takes `run_interactive_job` as an argument so that
+`support.py` does not import `cli/rbsim.py`, which imports it. It
+catches every exception on purpose: its one job is to turn whatever goes
+wrong on an unfamiliar computer into a line a student can send on. An
+injected renderer is not closed by `run_interactive_job` (it closes only
+a renderer it built), which is what lets the picture be read afterwards.
+
+### 16.3 The commands (`cli/rbsim.py`, `cli/rbbatch.py`) and their fronts
+
+```
+# ---- cli/rbsim.py ----
+class ScriptSettings(argv=None):
+    assign_rc_defaults(load_rc_defaults("rbsimrc.py", _BUILTIN_RC_DEFAULTS))
+    reconcile(parse_command_line(argv))
+    # parser: the existing arguments, with `scenario` now optional, plus
+    #   --examples [DIR], --write-rc, --check.
+    # Exactly one of {scenario, --examples, --write-rc, --check} must be
+    #   given; otherwise a usage error.
+
+function main(argv=None) -> int:
+    settings = ScriptSettings(argv)
+    if settings.examples is given: return copy_examples(settings.examples)
+    if settings.write_rc: return copy_rc_file("rbsimrc.py", cwd)
+    if settings.check:    return self_check(run_interactive_job)
+    try:
+        scenario_path = locate_scenario(settings.scenario_path)
+        run_interactive_job(scenario_path, ...as today...)
+    except FileNotFoundError, ValueError, KeyError as problem:
+        print "rbsim: <problem>" on stderr; return 2
+    report the saved screenshot / frame directory, as today
+    return 0
+
+function console_main():            # the pip route's front
+    record_command(); sys.exit(main())
+
+# ---- cli/rbbatch.py: the same shape ----
+    rc file "rbbatchrc.py"; utilities: --write-rc only; the scenario may
+    be a packaged example by bare name; same error handling; returns 0.
+
+# ---- src/scripts/rbsim.py (rbbatch.py alike) ----
+#!/usr/bin/env python3
+sys.path.insert(0, resolved(__file__).parents[1])        # src/
+from rigid_body.cli.rbsim import main, record_command
+if __name__ == "__main__":
+    record_command()
+    sys.exit(main())
+
+# ---- pyproject.toml ----
+[project.scripts]  rbsim   = "rigid_body.cli.rbsim:console_main"
+                   rbbatch = "rigid_body.cli.rbbatch:console_main"
+[project] dependencies = the modules this package imports, lower bounds
+    no tighter than the physdemo suite's requirements.in; pytest under
+    the "test" extra
+[tool.setuptools.package-data] rigid_body.examples = ["*.toml"]
+```
+
+### 16.4 Offscreen drawing (`render/offscreen.py`)
+
+```
+function prepare_offscreen() -> bool:
+    # Call BEFORE anything imports vtk or vedo.
+    if not sys.platform.startswith("linux"): return False
+    if "vtkmodules" in sys.modules or "vtk" in sys.modules:
+        if the variable is not already the EGL class: warn
+        return (variable == EGL class)
+    os.environ.setdefault("VTK_DEFAULT_OPENGL_WINDOW",
+                          "vtkEGLRenderWindow")
+    return (variable == EGL class)
+
+in run_interactive_job, before the renderer is imported:
+    offscreen = offscreen or screenshot or save_frames     (as today)
+    if offscreen and renderer is None: prepare_offscreen()
+    import VedoRenderer, the controls sources, run_interactive_session
+```
+
+The imports of the renderer move from the top of the module into
+`run_interactive_job` for this reason and no other. `tests/conftest.py`
+calls `prepare_offscreen()` before any test imports the renderer, since
+the suite always draws offscreen.
+
+### 16.5 Verification
+
+`tests/integration/test_cli.py`, `tests/unit/test_installed_copy.py`,
+`tests/unit/test_offscreen.py`:
+
+- `example_files()` is non-empty, every entry loads with
+  `load_scenario`, and its names equal the `*.toml` names in
+  `scenarios/`.
+- `locate_scenario`: an existing path is returned unchanged; a bare
+  packaged name with and without `.toml` returns the packaged path; a
+  local file of the same name wins; a directory part or an unknown name
+  raises with the examples listed.
+- `copy_examples`: writes all into an empty directory; a second call
+  writes nothing; an edited copy is untouched; a read-only directory
+  returns 1 with the remedy and no traceback.
+- `load_rc_defaults`: a file in the working directory beats
+  `$RIGID_BODY_RC`, which beats the package; with none reachable the
+  built-in defaults are returned. A copy made by `--write-rc` loads and
+  equals the package defaults.
+- `rbsim.main(["no_such.toml"])` and the same for `rbbatch` return 2 and
+  print the examples; no arguments, or two things to do, is a usage
+  error. `record_command` writes nothing when a utility flag is present,
+  and one line, not a traceback, in a read-only directory.
+- `rbsim.main(["--check"])` returns 0, prints `RESULT: PASS`, and leaves
+  the working directory empty (skips where no GL context exists).
+- `prepare_offscreen`: EGL on Linux whatever `DISPLAY` says; nothing on
+  macOS or Windows; an explicit setting wins.
+- **The installed-copy guarantee (ARCHITECTURE §8.6(4)).**
+- Manual, recorded in `dev/notes/`: install in a fresh virtual
+  environment outside the repository and run `rbsim --check`,
+  `rbsim --examples`, `rbsim dzhanibekov`, and `rbbatch dzhanibekov`.
+
+---
+
+With §16 the chain is complete from top to bottom: VISION fixed the goals,
 ARCHITECTURE the modules, DESIGN the algorithms and their reasons, and this
 document the language-agnostic form of every algorithm among them. What
 remains is the last transcription — from this pseudocode into the source of

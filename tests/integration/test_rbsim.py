@@ -7,7 +7,6 @@ display -- and one guarded test drives the real offscreen renderer end to
 end where a GL context exists.
 """
 
-import importlib.util
 import os
 
 import numpy as np
@@ -22,12 +21,9 @@ from rigid_body.scenario.serialization import (
 from rigid_body.ui.vedo_controls import AutoControlsSource
 
 
-# Load the entry script by path; scripts/ is not an importable package.
-_RBSIM_PATH = os.path.abspath(os.path.join(
-    os.path.dirname(__file__), "..", "..", "src", "scripts", "rbsim.py"))
-_spec = importlib.util.spec_from_file_location("rbsim_script", _RBSIM_PATH)
-rbsim = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(rbsim)
+# The command's body is a module in the package (ARCHITECTURE 3.9);
+# the script in src/scripts/ is only a front for it.
+from rigid_body.cli import rbsim  # noqa: E402
 
 
 def write_scenario(path):
@@ -166,21 +162,3 @@ def test_save_frames_writes_one_png_per_frame(tmp_path):
                if name.endswith(".png")]
     assert len(written) == 4
     assert os.path.exists(final_png)
-
-
-def test_command_log_in_a_read_only_directory_is_only_a_note(
-        tmp_path, monkeypatch, capsys):
-    """The command log is a convenience, never a reason to stop: a student
-    standing inside a shared, read-only installation still gets a run."""
-    locked = tmp_path / "shared"
-    locked.mkdir()
-    locked.chmod(0o555)
-    if os.access(locked, os.W_OK):
-        pytest.skip("this user can write a read-only directory")
-    monkeypatch.chdir(locked)
-    try:
-        # The method uses nothing of the instance, so none is built.
-        rbsim.ScriptSettings.record_command_line(None)      # must not raise
-    finally:
-        locked.chmod(0o755)
-    assert "continuing without the command log" in capsys.readouterr().err

@@ -1,0 +1,63 @@
+# Packaging for the second of the two ways this tool reaches a user
+# (dev/ARCHITECTURE.md section 9.5):
+#
+#   Route A, a shared computer: the physdemo suite LINKS the scripts in
+#     src/scripts/ and supplies the environment. Nothing in this file is
+#     used, and the tool is never pip-installed there.
+#   Route B, a personal computer: `pip install` of this repository. pip
+#     reads this file, installs the dependencies below, and creates the
+#     `rbsim` and `rbbatch` commands on Windows, macOS, and Linux alike.
+#
+# The dependencies are therefore DECLARED here, because on Route B nobody
+# else will supply them. The physdemo suite's requirements.in is the
+# single statement of what the course tools need: the lower bounds below
+# repeat the subset this package imports and must be no tighter than the
+# suite's. To install against a pinned, tested set instead,
+# `pip install -r <physdemo>/requirements.txt` and then this package with
+# `--no-deps`.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rigid_body"
+version = "0.3.0"
+description = "Teaching tool for rigid-body rotation: Poinsot, Euler, tops"
+requires-python = ">=3.10"
+readme = "README.md"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "matplotlib>=3.8",
+    "vedo>=2025.5",
+    "vtk>=9.4",
+    "h5py>=3.10",
+    "pint>=0.24",
+    "tomli>=2.0; python_version < '3.11'",
+    "tomli_w>=1.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+# The front doors on Route B. Each command's body is a module inside the
+# package (dev/ARCHITECTURE.md section 3.9), so that these console scripts
+# and the executable scripts in src/scripts/ run the same code.
+[project.scripts]
+rbsim = "rigid_body.cli.rbsim:console_main"
+rbbatch = "rigid_body.cli.rbbatch:console_main"
+
+[project.urls]
+Repository = "https://github.com/UMKC-CPG/rigid_body"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The example scenarios are data inside the package, so that they are
+# installed with it and `rbsim --examples` can find them anywhere.
+[tool.setuptools.package-data]
+"rigid_body.examples" = ["*.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

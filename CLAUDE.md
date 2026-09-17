@@ -73,24 +73,46 @@ dependencies, and architecture summary. -->
 
 ## Running
 
-The tool is a member of the `physdemo` suite (`../physdemo/`,
-`github.com/UMKC-CPG/physdemo`), which owns the shared environment
-and a `bin/` of commands linked to the entry points
-(`dev/ARCHITECTURE.md` §9.5). `sdemo` is the shell alias that sources
-the suite's `activate.sh`.
+The tool reaches a user in two ways that run the same code
+(`dev/ARCHITECTURE.md` §9.5): **Route A**, the `physdemo` suite
+(`../physdemo/`, `github.com/UMKC-CPG/physdemo`), which owns a shared
+environment and links the scripts in `src/scripts/` — for a shared
+computer, and for development here (`sdemo` sources the suite's
+`activate.sh`); and **Route B**, `pip install` of this repository,
+which creates `rbsim` and `rbbatch` from `pyproject.toml` — for a
+laptop, including Windows.
 
 ```bash
-sdemo                                # activate the suite
-rbsim scenarios/dzhanibekov.toml     # Tier 1, by name, from anywhere
-rbbatch scenarios/dzhanibekov.toml -o out.h5        # Tier 2
+sdemo                                # activate the suite (Route A)
+rbsim --check                        # can this computer run and draw?
+rbsim dzhanibekov                    # a packaged example, by name
+rbsim scenarios/dzhanibekov.toml     # the same file, in a clone
+rbbatch dzhanibekov -o out.h5        # Tier 2
 ```
 
-Entry points under `src/scripts/` MUST keep the suite's three rules: a
-`#!/usr/bin/env python3` first line and the executable bit; the package
-located from `os.path.realpath(__file__)` (the command is normally run
-through a symbolic link); the rc file found beside the resolved script.
-Put no absolute path and nothing specific to one cluster in this
-repository; site notes belong in `physdemo/site/`.
+Rules that keep both routes working, and that are tested
+(`tests/unit/test_installed_copy.py`):
+
+- **Everything a run needs is inside `src/rigid_body/`,** because that
+  is all `pip install` delivers: code, `defaults/*rc.py`,
+  `examples/*.toml`. Find such files through the package
+  (`importlib.resources`, or a path from a module's own resolved
+  `__file__`), never relative to a script or the working directory.
+- **A command's body is a module in `cli/`.** `src/scripts/<name>.py`
+  is only a front: shebang, executable bit, `src/` put on the path
+  from `Path(__file__).resolve()` (it is normally run through a
+  symbolic link), then a call into `cli/`. It defines no function.
+- **A new third-party import is declared in `pyproject.toml`,** with a
+  lower bound no tighter than the suite's `requirements.in`, and is
+  added to the suite first.
+- **Offscreen drawing decides VTK's window class before VTK is
+  imported** (`render/offscreen.py`, PSEUDOCODE §16.4), so nothing in
+  `cli/` imports the renderer at module level.
+- Put no absolute path and nothing specific to one computer in this
+  repository; site notes belong in `physdemo/site/`.
+- Assume the working directory may be read-only and the home directory
+  small: a failed side-effect write is one line on standard error,
+  never a traceback, and never stops the physics.
 
 ## Command Logging
 
@@ -98,8 +120,10 @@ Every user-invokable script appends the issued command line to a file
 named `command` in the current working directory — a dated `Date:` /
 `Cmnd: <argv>` block per run — so the exact invocation is recoverable
 later. This is the group's standard idiom (the project template's
-`XYZ.py`); `rbsim.py` and `rbbatch.py` carry it as
-`ScriptSettings.record_command_line()`.
+`XYZ.py`); both commands share it as `cli/support.record_command()`,
+called from the fronts — the executable script's `__main__` block and
+`console_main()` — and never from `main()`, so that the test suite can
+call `main(argv)` without leaving `command` files behind.
 
 The log is a convenience and MUST NOT stop a run. Where the working
 directory cannot be written — a student standing inside a shared,

@@ -16,6 +16,7 @@ rigid_body/
     PSEUDOCODE.md     Algorithm specifications
     TODO.md           Task list by level
     spikes/           Throwaway experiments whose results are cited
+    notes/            Dated working notes (not binding)
   src/
     rigid_body/       The importable library (all physics and display)
       core/           Units and rotation mathematics
@@ -27,16 +28,33 @@ rigid_body/
       sinks/          Consumers of a computed trajectory
       render/         Scene description, palettes, vedo backend
       ui/             Interactive control panels
-    scripts/          Command-line entry points (XYZ.py idiom)
+      cli/            Bodies of the commands (§3.9)
+      defaults/       The shipped rc files (§7)
+      examples/       Ready-to-run example scenarios (TOML)
+    scripts/          Thin executable fronts for cli/ (§3.9)
+  scenarios           Symbolic link to src/rigid_body/examples/
   tests/              Test suite (unit, integration, regression)
+  pyproject.toml      Packaging (§9.5, Route B)
   CLAUDE.md           AI assistant guidance
 ```
 
 The library lives under `src/rigid_body/` and holds everything
-reusable. The user-facing entry points live in `src/scripts/`, following
-the existing `XYZ.py` / `XYZrc.py` convention: a settings class whose
-defaults come from a resource-control file and are then reconciled with
-command-line arguments.
+reusable. The commands follow the existing `XYZ.py` / `XYZrc.py`
+convention — a settings class whose defaults come from a
+resource-control file and are then reconciled with command-line
+arguments — with one change forced by §9.5: their bodies live in the
+library (`cli/`), and `src/scripts/` holds only the few lines that
+start them.
+
+**Everything the tool needs at run time lives under
+`src/rigid_body/`,** because that directory is all that an installed
+copy contains (§9.5): the code, the shipped rc defaults, and the example
+scenarios. `scenarios` at the top level is kept as a symbolic link so
+that `scenarios/dzhanibekov.toml` remains the short path it has always
+been in a clone; it is a convenience of a checkout and nothing may
+depend on it. (On a Windows checkout without symbolic-link support it
+appears as a small text file. Windows users are served by the installed
+route and `rbsim --examples`, not by a clone.)
 
 ---
 
@@ -182,14 +200,34 @@ Described in §5.2. This group is the tier boundary made concrete.
 | `vedo_renderer.py` | Realizes a scene description using vedo / VTK |
 | `controls.py` | Interactive widgets and their bindings |
 
-### 3.9 `scripts/` — Entry points
+### 3.9 `cli/` and `scripts/` — Entry points
 
-| Script | Purpose |
+A command is reached in two ways (§9.5), and both must run the same
+code. So the body of each command is a module in the library, and what
+differs is only the few lines that start it.
+
+| Module | Purpose |
 | --- | --- |
-| `rbsim.py` | Launch the interactive simulation (Tier 1) |
-| `rbsimrc.py` | Resource-control defaults for `rbsim.py` |
-| `rbbatch.py` | Run a saved scenario as a batch job (Tier 2, future) |
-| `rbbatchrc.py` | Resource-control defaults for `rbbatch.py` |
+| `cli/rbsim.py` | Body of the interactive simulation (Tier 1) |
+| `cli/rbbatch.py` | Body of the batch job (Tier 2) |
+| `cli/support.py` | What both share: finding the rc file and the |
+| | packaged examples, copying them out, the self-check |
+| `defaults/rbsimrc.py`, `defaults/rbbatchrc.py` | The shipped |
+| | resource-control defaults (§7) |
+
+| Front | How it is reached |
+| --- | --- |
+| `scripts/rbsim.py`, `scripts/rbbatch.py` | Executable scripts; the |
+| | `physdemo` suite links them, and a clone runs them directly. |
+| | Each puts `src/` on the path from its resolved location, then |
+| | calls its `cli` module. |
+| console scripts `rbsim`, `rbbatch` | Declared in `pyproject.toml`; |
+| | created by `pip install`. Each calls `console_main`. |
+
+Both fronts log the invocation to `command` and then call `main()`;
+`main(argv)` itself never logs, so the test suite can call it freely.
+Neither the fronts nor `cli/` hold any physics. `cli/` sits at the top
+of the dependency graph, where `scripts/` was, and nothing imports it.
 
 ---
 
@@ -199,7 +237,10 @@ Dependencies point downward only. No module may import from a group
 listed above it.
 
 ```
-scripts/rbsim.py                    scripts/rbbatch.py
+(scripts/rbsim.py and scripts/rbbatch.py are fronts: they import their
+ cli/ module and nothing else)
+
+cli/rbsim.py                        cli/rbbatch.py
   |                                   |
   +-- ui/ ------------+               |
   |                   |               |
@@ -420,7 +461,13 @@ is stated here as a rule.
 **The rc file** (`rbsimrc.py`, following the `XYZrc.py` idiom) holds what
 is *machine-dependent and rarely changed*: filesystem paths, output
 directories, default window size, preferred palette, cluster and queue
-settings, and the default values of anything below.
+settings, and the default values of anything below. It is looked for in
+the working directory, then in `$RIGID_BODY_RC`, and last in the package
+itself (`rigid_body/defaults/`), which is the documented set of defaults
+and is always present, in a clone and in an installed copy alike.
+`rbsim --write-rc` and `rbbatch --write-rc` copy the shipped file into
+the working directory for a user who wants to change it; nobody should
+need to know where the package is installed.
 
 **The scenario file** holds the *physics*: the body and its density, the
 initial conditions, the torque models in force, the integrator and
@@ -542,7 +589,7 @@ a test fixture.
 
 ### 8.6 Architectural tests
 
-Three structural properties are mechanically checkable and are therefore
+Four structural properties are mechanically checkable and are therefore
 tested rather than left to discipline:
 
 1. **The import rule of §4.** Nothing under `dynamics/`, `body/`,
@@ -553,6 +600,13 @@ tested rather than left to discipline:
 3. **The determinism guarantee of §6.4.** The same scenario run twice,
    and run under differing time-control sequences, yields identical
    trajectories.
+4. **The installed-copy guarantee of §9.5.** Everything a run needs is
+   inside the package: each rc file loads with the search restricted to
+   the package, every example scenario is found through the package and
+   loads, the console scripts named in `pyproject.toml` import, every
+   third-party module the package imports is a declared dependency, and
+   each script in `src/scripts/` is only a front. `scenarios/` and the
+   packaged examples are the same files.
 
 ---
 
@@ -562,24 +616,28 @@ tested rather than left to discipline:
 
 Python 3.10 or newer, with a NumPy-based numerical core.
 
-| Dependency | Status on cluster | Purpose |
+| Dependency | Tested with | Purpose |
 | --- | --- | --- |
-| `numpy` 2.2.6 | present | Arrays, linear algebra |
-| `scipy` 1.15.3 | present | Integrators, eigenvalue solvers |
-| `vedo` 2025.5.4 | present | Interactive 3D rendering |
-| `vtk` 9.5.2 | present | Rendering engine beneath vedo |
-| `h5py` 3.15.1 | present | HDF5 output for the batch tier |
-| `matplotlib` 3.10.3 | present | Auxiliary plots |
-| `pint` | **to be added** | Units at the boundary (§5.5) |
-| `tomli-w` | **to be added** | Writing TOML scenario files (DESIGN §11) |
-| `pytest` | required | Test suite |
-| `ffmpeg` 6.0 | module | Video export (Goal 11) |
-| `paraview` 6.1.1 | module | Post-hoc visualization of HDF5/XDMF |
-| `virtualgl` 3.1.4 | module | Optional GPU acceleration only (§9.3) |
+| `numpy` | 2.2.6 | Arrays, linear algebra |
+| `scipy` | 1.15.3 | Integrators, eigenvalue solvers |
+| `vedo` | 2026.6.1 | Interactive 3D rendering |
+| `vtk` | 9.6.2 | Rendering engine beneath vedo |
+| `h5py` | 3.16.0 | HDF5 output for the batch tier |
+| `matplotlib` | 3.10.9 | Auxiliary plots |
+| `pint` | 0.24.4 | Units at the boundary (§5.5) |
+| `tomli-w` | 1.2.0 | Writing TOML scenario files (DESIGN §11) |
+| `pytest` | 9.1.1 | Test suite (the `test` extra) |
 
-Deliberately *not* dependencies yet: `numba` and `mpi4py` (absent on the
-cluster; both belong to the deferred compiled-kernel work of §5.4), and
-any GUI toolkit beyond what vedo provides.
+These are the versions pinned by the `physdemo` suite (§9.5), which is
+the single statement of what the course tools need; `pyproject.toml`
+repeats the subset this tool imports, with lower bounds no tighter than
+the suite's. Useful beside the tool but not dependencies of it:
+`ffmpeg` (video from saved frames, Goal 11) and ParaView (post-hoc
+visualization of the HDF5/XDMF output).
+
+Deliberately *not* dependencies yet: `numba` and `mpi4py` (both belong
+to the deferred compiled-kernel work of §5.4), and any GUI toolkit
+beyond what vedo provides.
 
 *Reading* TOML scenarios needs no new dependency on Python 3.11+, where
 `tomllib` is in the standard library; on the 3.10 floor the `tomli`
@@ -593,27 +651,47 @@ prerequisite for the interactive tier.
 ### 9.2 Running
 
 ```bash
+# Route A (§9.5): the physdemo suite.
 sdemo          # alias for:  source <suite prefix>/activate.sh
                # (or, where Lmod is used:  module load cpg_physdemo)
+# Route B (§9.5): a pip-installed copy.
+source physdemo/bin/activate
 
-# Tier 1: interactive exploration (see §9.3 for the cluster case).
+# Then, identically on both routes:
+rbsim --check                  # can this computer run and draw it?
+rbsim dzhanibekov              # a packaged example, by bare name
+rbsim --examples               # copy the example scenarios here
+rbsim dzhanibekov.toml         # Tier 1: your own (edited) copy
+rbsim --write-rc               # copy the rc defaults here, to edit
+rbbatch dzhanibekov.toml -o dzhanibekov.h5     # Tier 2: batch run
+
+# In a clone, from the repository root:
 rbsim scenarios/dzhanibekov.toml
-
-# Tier 2: batch high-fidelity run from a saved scenario.
-rbbatch my_scenario.toml
-
-# Tests, from the repository root.
 pytest tests/ -v
 ```
 
-The commands are provided by links in the `physdemo` suite's `bin/`
-directory (§9.5), so they run by name from any directory.
+`rbsim --check` is the one-line answer to "will it work here": it
+reports the versions in use, runs a short simulation, draws it
+offscreen, and verifies that the picture is not blank.
+
+**Offscreen drawing** (`--offscreen`, `--screenshot`, `--save-frames`,
+`--check`, the tests) chooses VTK's window class by one rule, shared
+with the other course tools and kept in `render/offscreen.py`: on
+Linux, a request to draw offscreen selects VTK's EGL window class
+before VTK is imported, whatever `DISPLAY` says, because VTK's X window
+class hangs on a `DISPLAY` that is set but dead; a request for a window
+leaves VTK alone; macOS and Windows need nothing and are left alone.
 
 ### 9.3 Cluster deployment and the rendering budget
 
-Both the interactive and the batch tiers run on the teaching cluster
-rather than on student laptops, which makes the environment controllable
-and uniform.
+*(Revised 2026-09-17. This section first said that both tiers run on
+the teaching cluster rather than on student laptops. The class will not
+use the cluster these measurements were made on: students will run on
+their own laptops if that can be made near effortless, and otherwise on
+a different teaching cluster with a read-only shared installation and
+small home quotas; §9.5 serves both. The measurements below stand as
+what they are — software rendering on one research cluster's nodes — and
+remain the evidence that no GPU is needed.)*
 
 **Rendering risk: retired by measurement.** A benchmark scene containing
 everything the real tool draws — body, wireframe momental ellipsoid,
@@ -698,53 +776,77 @@ HDF5 output is excluded from version control as bulky derived data: the
 scenario that generated it is tracked instead, which is smaller and more
 useful (§8.5).
 
-### 9.5 The shared environment: the `physdemo` suite
+### 9.5 The two ways in
 
-Students must not have to build a Python environment, and nobody
-should have to recall a path to run a tool. The tool is one member of
-the **`physdemo` suite** (`github.com/UMKC-CPG/physdemo`): a set of
+Students must not have to build a numerical environment by hand, and
+nobody should have to recall a path to run a tool. The tool reaches a
+user in two ways. They exist because the two intended places want
+opposite things, and they run the same code (§3.9).
+
+**Route A: the `physdemo` suite, for a shared computer.** The tool is
+one member of the suite (`github.com/UMKC-CPG/physdemo`): a set of
 course demonstration tools that share one Python environment and one
-`bin/` directory of commands. The suite, not this repository, owns the
-environment.
+`bin/` directory of commands. One person installs the suite; everyone
+else only sources its `activate.sh` (or loads its optional Lmod
+module). Nothing is installed per user, which is what a teaching
+cluster with small home quotas and a read-only shared directory
+requires. Because the environment is shared, everyone runs identical
+library versions. The tool is *linked*, never copied and never
+pip-installed into the suite, so a clone stays live.
 
-**What the suite provides.** One virtual environment built from a
-pinned `requirements.txt`; a `bin/` of symbolic links, one per command,
-named without `.py` (`rbsim`, `rbbatch`); an `activate.sh` that puts
-both on the `PATH`; and, optionally, an Lmod modulefile that does the
-same. A session begins:
-
-```bash
-sdemo                  # or: module load cpg_physdemo
-rbsim scenarios/dzhanibekov.toml
-```
-
-Because the environment is shared and read-only to students, everyone
-runs identical library versions, which also makes the §9.3 performance
-figures meaningful across users.
-
-**The three rules this tool obeys,** so that the suite's
-`install_tool.sh` can link it and the link works:
+The rules this tool obeys so that the suite can link it:
 
 1. Every entry point under `src/scripts/` begins with
    `#!/usr/bin/env python3` and is executable.
 2. An entry point finds the package from its own **resolved** location
-   (`os.path.realpath(__file__)`), never from the working directory and
-   never from `abspath`, which would name the suite's link to the script
-   rather than the file.
-3. The rc file is found beside the resolved script when no machine-local
-   copy exists.
+   (`Path(__file__).resolve()`), never from the working directory and
+   never from the unresolved path, which would name the suite's link to
+   the script rather than the file.
+3. The shipped defaults are inside the package (§7), so a linked command
+   needs no configuration step.
+
+**Route B: `pip install`, for a personal computer.** A laptop has one
+user, no shared directory, and quite possibly no `bash` (Windows), so
+the suite's shell scripts are the wrong tool. There the tool installs
+like any Python package, with its dependencies, into an environment the
+user makes:
+
+```
+python -m venv physdemo
+source physdemo/bin/activate        (Windows: physdemo\Scripts\activate)
+pip install https://github.com/UMKC-CPG/rigid_body/archive/refs/heads/main.zip
+rbsim --check
+rbsim dzhanibekov
+```
+
+The archive URL needs no `git` on the laptop; a release is the same URL
+with `refs/tags/<tag>`. `pip` creates `rbsim` and `rbbatch` from the
+console scripts declared in `pyproject.toml`, on every operating system.
+The same environment holds the other course tools: each is one more
+`pip install` line.
+
+This is why everything the tool needs at run time is inside the package
+(§1), and why `pyproject.toml` **declares the dependencies**: on this
+route nobody else will supply them. Route B installs the newest versions
+that satisfy the bounds, so a breaking release of a dependency shows up
+on a laptop first; the suite's pinned `requirements.txt` is the
+known-good fallback (`pip install -r` it, then this tool with
+`--no-deps`).
 
 **Portability.** Nothing in this repository names a path on one
-computer. The suite installs to whatever prefix it is given, on any
-system with Python 3.10+; what is specific to the group's cluster lives
-in the suite's `site/` directory. Without the suite, the tool runs from
-any environment holding the packages of §9.1.
+computer. What is specific to one site lives in the suite's `site/`
+directory.
+
+**What has been tried.** Route A on Linux with Python 3.10, including
+from a read-only installation with an empty home directory. Route B on
+Linux. Neither route has yet been run on macOS or Windows; the first
+person to do so should run `rbsim --check` and report what it prints.
 
 **History.** An earlier draft of this section described a per-project
 mamba environment and a `cpg_rigidbody` modulefile. Neither was ever
 created: through `v0.3` the tool ran from a virtual environment named
-`rigid`, activated by hand. The suite replaced that arrangement with
-the same package versions.
+`rigid`, activated by hand. The suite replaced that, and Route B was
+added when laptops became an intended place to run.
 
 ---
 

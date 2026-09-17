@@ -24,6 +24,7 @@
 | 12 | Trajectory retention | written |
 | 13 | Scene description and palettes | written |
 | 14 | Interaction and controls | written |
+| 15 | Entry points, and getting to a first run | written |
 
 ---
 
@@ -2495,3 +2496,117 @@ drift does (§7), so the scaling controls here and the labels of §13.5 are
 two views of one requirement — the last place in the tool where Principle
 2's discipline, that nothing false is shown as physics, reaches the
 student's hand.
+
+---
+
+## 15. Entry Points, and Getting to a First Run
+
+Added 2026-09-17, with ARCHITECTURE §9.5. Until then the two commands
+had no section in this document: `rbsim.py` and `rbbatch.py` were written
+from the group's `XYZ.py` idiom, and the idiom was the whole
+specification. That was adequate while the only user had a clone. It
+stopped being adequate when the tool acquired two ways of reaching a
+user (§9.5), one of which delivers nothing but the package, and a class
+of users who have no idea where any file is and should not need to.
+
+### 15.1 One body, two fronts
+
+A command's behaviour lives in `cli/` inside the package; what starts it
+is either the executable script in `src/scripts/` (which the `physdemo`
+suite links, and a clone runs) or the console script that `pip` creates.
+The fronts contain no behaviour at all, which is what guarantees that
+the two routes cannot drift apart. `main(argv)` takes its arguments as a
+parameter and returns an exit status, so that the test suite drives it
+directly; the `command` log is written by the fronts and never by
+`main`, so that tests leave nothing behind.
+
+### 15.2 Where files are found
+
+The shipped rc files and the example scenarios are inside the package
+(`defaults/`, `examples/`), and are located through the package, never
+relative to a script or the working directory. That one rule makes a
+clone, a linked suite, and an installed copy behave identically.
+
+The rc file is searched for in the working directory, then in
+`$RIGID_BODY_RC`, then in the package. The first two were always
+intended (the help text has always said `./rbsimrc.py`), but the working
+directory was never actually searched: the old lookup imported the rc
+file by name through `sys.path`, which holds the script's directory and
+not the working directory. The lookup now loads the file by path from
+an explicit list, which makes the documented behaviour the real one.
+The built-in dictionary in each `cli` module remains as the fallback of
+last resort, so that a damaged installation still starts.
+
+### 15.3 Getting to a first run
+
+Four small additions, none of which touches the physics:
+
+**`rbsim --examples [DIR]`** copies every packaged example scenario into
+`DIR` (default: the working directory) and exits. It never overwrites: a
+file already there is left alone and reported, because a student's
+edited copy is worth more than a fresh one. If `DIR` cannot be written
+the message says so and names the remedy.
+
+**A packaged example by bare name.** `rbsim dzhanibekov` (and `rbbatch
+dzhanibekov`) runs the packaged scenario directly. The rule is narrow so
+that it cannot surprise: it applies only when the argument names no
+existing file, has no directory part, and matches a packaged example
+with or without `.toml`; a file in the working directory always wins;
+and one line on standard error says which file is being used. This is
+what makes the very first run a single command.
+
+**`--write-rc`** (both commands) copies that command's shipped rc file
+into the working directory, again refusing to overwrite.
+
+**`rbsim --check`** answers "will it work on this computer" without the
+user knowing what to look for. It prints the Python version, the
+platform, and the version of every declared dependency; runs a packaged
+scenario for a few frames offscreen through the ordinary
+`run_interactive_job`; and reads the picture back to verify that it is
+not blank, since a window without a working OpenGL context accepts draw
+calls and draws nothing (the trap ARCHITECTURE §9.3 records). It ends
+with one line, `RESULT: PASS` or `RESULT: FAIL -- <reason>`, and the
+matching exit status, and it writes no file.
+
+**What is and is not logged.** `--examples`, `--write-rc`, and `--check`
+are not runs, and like `--help` they are not recorded in `command`.
+
+**Errors are messages.** A scenario that does not exist, or that fails
+to load (§11), ends the command with the message and exit status 2, not
+with a Python traceback. When the file does not exist the message lists
+the packaged examples and mentions `--examples`.
+
+### 15.4 Drawing offscreen
+
+`--offscreen`, `--screenshot`, `--save-frames`, and `--check` all draw
+without a window. On Linux, VTK's default (X) window class cannot do
+that without a live X display, and it *hangs* on a `DISPLAY` that is set
+but dead, which is common in long-lived cluster shells. So the rule is
+keyed on what was asked for, not on `DISPLAY`: a request to draw
+offscreen sets `VTK_DEFAULT_OPENGL_WINDOW=vtkEGLRenderWindow` before VTK
+is imported; a request for a window leaves VTK alone; macOS and Windows
+need nothing and are left alone; an explicit setting in the environment
+always wins. The rule is `render/offscreen.py`, which imports neither
+VTK nor vedo because it must run before either. It is the same rule, and
+the same module, as in the companion `scattering` tool, where it was
+first needed and verified.
+
+Since VTK fixes its window class when it is first imported, the `cli`
+modules must not import the renderer at module level: they decide first,
+then import. This is also why `--help` and a mistyped scenario path
+answer at once instead of paying for VTK's import.
+
+### 15.5 Alternatives considered
+
+**Keep the examples and rc files where they were.** Rejected: an
+installed copy contains only the package, so they would not reach a
+laptop at all.
+
+**Give the utilities to `rbbatch` as well.** Only `--write-rc` and the
+bare example name; one command that answers "does it work" and "where
+are the examples" is easier to teach than two.
+
+**Fall back to a packaged example for any missing path.** Rejected:
+`rbsim results/dzhanibekov.toml` with a mistyped directory would
+silently run something else.
+

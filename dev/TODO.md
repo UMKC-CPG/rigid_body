@@ -15,6 +15,18 @@
 
 <!-- Tasks related to layout, modules, build. -->
 
+- [ ] (§9.5) Route B has been run on Linux only. Have someone run the
+      README's four lines on **macOS** and on **Windows** and send back
+      what `rbsim --check` prints; record the result in §9.5 "What has
+      been tried".
+- [ ] (§9.5) Cut a release tag once Route B is confirmed, and point the
+      README's `pip install` URL at `refs/tags/<tag>` so that a class
+      installs a fixed version rather than `main`.
+- [ ] (§9.1) Decide and state the license: `pyproject.toml` has no
+      `license` field and the repository has no LICENSE file, so a
+      `pip install` carries no terms. (scattering and physdemo are
+      GPL-3.0-or-later.)
+
 ---
 
 ## DESIGN

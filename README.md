@@ -60,45 +60,71 @@ downward (does this require child updates?) before committing.
 ## Layout
 
 ```
-dev/          Design document chain
-scenarios/    Ready-to-run example scenarios (TOML)
+dev/            Design document chain
+scenarios       Symbolic link to src/rigid_body/examples/
 src/
-  rigid_body/   The importable library (physics and display)
-  scripts/      Command-line entry points (rbsim, rbbatch)
-tests/        Test suite (pytest)
+  rigid_body/   The importable library (physics and display), plus
+    cli/        the bodies of the commands (rbsim, rbbatch),
+    defaults/   the shipped rc files, and
+    examples/   ready-to-run example scenarios (TOML)
+  scripts/      Thin executable fronts for cli/
+tests/          Test suite (pytest)
+pyproject.toml  Packaging, for `pip install`
+```
+
+## Installing
+
+There are two ways, for two situations; they run the same code.
+
+**On your own computer (Windows, macOS, or Linux).** You need Python
+3.10 or later. Make an environment, install the tool into it, and
+check that the computer can draw:
+
+```bash
+python -m venv physdemo
+source physdemo/bin/activate        # Windows: physdemo\Scripts\activate
+pip install https://github.com/UMKC-CPG/rigid_body/archive/refs/heads/main.zip
+rbsim --check
+```
+
+`pip` fetches the numerical and graphics libraries (about 1 GB) and
+creates the `rbsim` and `rbbatch` commands. No `git`, compiler, or GPU
+is needed. In later sessions only the `activate` line is repeated. The
+companion `scattering` tool installs into the same environment with one
+more `pip install` line.
+
+**On a shared computer (a teaching cluster).** The tool is one member
+of the [`physdemo`](https://github.com/UMKC-CPG/physdemo) suite, which
+one person installs for everybody: a single Python environment and a
+directory of commands. Nothing is installed per user, which suits small
+home directories and a read-only shared area. The instructor follows
+the suite's README; a student only turns it on:
+
+```bash
+source /path/to/the/shared/physdemo/activate.sh
+rbsim --check
 ```
 
 ## Running
 
-The project targets Python 3.10+ with NumPy, SciPy, vedo, VTK, and
-h5py. It is one member of the
-[`physdemo`](https://github.com/UMKC-CPG/physdemo) suite of course
-demonstration tools, which provides the Python environment and puts
-every tool's commands on the `PATH`:
-
 ```bash
-git clone https://github.com/UMKC-CPG/physdemo.git
-physdemo/install.sh                      # environment + activate.sh
-physdemo/install_tool.sh /path/to/rigid_body
+rbsim dzhanibekov          # run a packaged example by name
+rbsim --examples           # copy the example scenarios here, to edit
+rbsim dzhanibekov.toml     # run your edited copy
+rbsim --write-rc           # copy the window/palette defaults here
+rbsim --help
 ```
 
-After that, a session is two commands, from any directory:
-
-```bash
-source ~/physdemo/activate.sh     # the CPG group aliases this: sdemo
-rbsim scenarios/dzhanibekov.toml
-```
-
-`physdemo-check` reports whether the machine can draw, on screen and
-off. The tool also runs without the suite, from any environment holding
-the packages above, as `src/scripts/rbsim.py`.
+Run from a directory you can write in: screenshots, HDF5 output, and
+the `command` log go to the working directory. In a directory you
+cannot write, the tool still runs and says what it could not save.
 
 ### Interactive tier — a live window (`rbsim`)
 
 Open a scenario in a live window and watch it tumble:
 
 ```bash
-rbsim scenarios/dzhanibekov.toml
+rbsim dzhanibekov.toml
 ```
 
 Controls: **space** pauses and resumes, **s** single-steps, **-** slows,
@@ -123,7 +149,7 @@ With no desktop session, render offscreen and save images you can view
 (or turn into a video). Save the final frame:
 
 ```bash
-rbsim scenarios/dzhanibekov.toml \
+rbsim dzhanibekov.toml \
     --screenshot dzhanibekov.png --frames 60
 ```
 
@@ -131,7 +157,7 @@ or save every frame as an image sequence and assemble a video with
 ffmpeg:
 
 ```bash
-rbsim scenarios/dzhanibekov.toml \
+rbsim dzhanibekov.toml \
     --save-frames dz_frames/ --frames 300
 ffmpeg -framerate 30 -i dz_frames/frame_%05d.png dzhanibekov.mp4
 ```
@@ -142,7 +168,7 @@ Run a scenario deterministically and write the full trajectory to HDF5
 with an XDMF companion (and a live conservation-drift report):
 
 ```bash
-rbbatch scenarios/dzhanibekov.toml -o dzhanibekov.h5
+rbbatch dzhanibekov.toml -o dzhanibekov.h5
 ```
 
 The scenario is embedded in the output as provenance, so any result
@@ -158,7 +184,9 @@ reproduces the same trajectory bit-for-bit on any machine.
 | `scenarios/symmetric_precession.toml` | A symmetric top (a cylinder) in steady precession: the polhode is a circle. |
 
 A scenario is a plain TOML file describing the body, initial conditions,
-torques, fidelity, and viewpoint; copy one and edit it to make your own.
+torques, fidelity, and viewpoint. `rbsim --examples` copies these three
+into the working directory; edit one to make your own. Each can also be
+run unedited by its bare name (`rbsim free_tumble`).
 
 ### Tests
 

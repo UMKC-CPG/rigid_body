@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 
-"""Resource-control defaults for ``rbbatch.py`` (the ``XYZrc.py`` idiom).
+"""Resource-control defaults for ``rbbatch`` (the ``XYZrc.py`` idiom).
 
 This file holds what is machine-dependent and rarely changed for a batch
 run -- where output lands and how it is written -- and nothing that can
 affect the computed trajectory. Per ARCHITECTURE Section 7, any value that
 influences the physics lives in the scenario file, never here: the rc file
-governs convenience and environment, the scenario governs physics. A user
-may keep a personal copy of this file on ``$RIGID_BODY_RC`` to override the
-defaults shipped beside the script.
+governs convenience and environment, the scenario governs physics. It is
+looked up first in the working directory, then in ``$RIGID_BODY_RC``, then
+here, inside the package (DESIGN Section 15.2); ``rbbatch --write-rc``
+copies it to the working directory to edit.
 """
 
 
