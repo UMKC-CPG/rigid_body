@@ -166,3 +166,21 @@ def test_save_frames_writes_one_png_per_frame(tmp_path):
                if name.endswith(".png")]
     assert len(written) == 4
     assert os.path.exists(final_png)
+
+
+def test_command_log_in_a_read_only_directory_is_only_a_note(
+        tmp_path, monkeypatch, capsys):
+    """The command log is a convenience, never a reason to stop: a student
+    standing inside a shared, read-only installation still gets a run."""
+    locked = tmp_path / "shared"
+    locked.mkdir()
+    locked.chmod(0o555)
+    if os.access(locked, os.W_OK):
+        pytest.skip("this user can write a read-only directory")
+    monkeypatch.chdir(locked)
+    try:
+        # The method uses nothing of the instance, so none is built.
+        rbsim.ScriptSettings.record_command_line(None)      # must not raise
+    finally:
+        locked.chmod(0o755)
+    assert "continuing without the command log" in capsys.readouterr().err

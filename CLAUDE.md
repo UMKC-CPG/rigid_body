@@ -92,6 +92,20 @@ through a symbolic link); the rc file found beside the resolved script.
 Put no absolute path and nothing specific to one cluster in this
 repository; site notes belong in `physdemo/site/`.
 
+## Command Logging
+
+Every user-invokable script appends the issued command line to a file
+named `command` in the current working directory — a dated `Date:` /
+`Cmnd: <argv>` block per run — so the exact invocation is recoverable
+later. This is the group's standard idiom (the project template's
+`XYZ.py`); `rbsim.py` and `rbbatch.py` carry it as
+`ScriptSettings.record_command_line()`.
+
+The log is a convenience and MUST NOT stop a run. Where the working
+directory cannot be written — a student standing inside a shared,
+read-only installation, among the example scenarios — the method says
+so in one line on standard error and returns.
+
 ## Dependencies
 
 <!-- List your project's dependencies here. -->

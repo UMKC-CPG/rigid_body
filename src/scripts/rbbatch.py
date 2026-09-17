@@ -215,14 +215,24 @@ scenario file; the rc file governs only where and how output is written.
             self.scenario_path, self.output_directory)
 
     def record_command_line(self):
-        """Append the invocation to a ``command`` log, as the idiom does."""
-        with open("command", "a") as command_log:
-            stamp = datetime.now().strftime("%b. %d, %Y: %H:%M:%S")
-            command_log.write(f"Date: {stamp}\n")
-            command_log.write("Cmnd:")
-            for argument in sys.argv:
-                command_log.write(f" {argument}")
-            command_log.write("\n\n")
+        """Append the invocation to a ``command`` log, as the idiom does.
+
+        The log is a convenience and must never stop a run. The usual way
+        to fail here is a student standing inside a shared, read-only
+        installation, among the example scenarios; say so in one line and
+        carry on (CLAUDE.md, "Command Logging").
+        """
+        try:
+            with open("command", "a") as command_log:
+                stamp = datetime.now().strftime("%b. %d, %Y: %H:%M:%S")
+                command_log.write(f"Date: {stamp}\n")
+                command_log.write("Cmnd:")
+                for argument in sys.argv:
+                    command_log.write(f" {argument}")
+                command_log.write("\n\n")
+        except OSError as problem:
+            print(f"note: cannot write ./command here ({problem.strerror}); "
+                  "continuing without the command log", file=sys.stderr)
 
 
 def report(result):
