@@ -593,15 +593,21 @@ prerequisite for the interactive tier.
 ### 9.2 Running
 
 ```bash
+sdemo          # alias for:  source <suite prefix>/activate.sh
+               # (or, where Lmod is used:  module load cpg_physdemo)
+
 # Tier 1: interactive exploration (see §9.3 for the cluster case).
-python3 src/scripts/rbsim.py
+rbsim scenarios/dzhanibekov.toml
 
-# Tier 2: batch high-fidelity run from a saved scenario (future).
-python3 src/scripts/rbbatch.py my_scenario.toml
+# Tier 2: batch high-fidelity run from a saved scenario.
+rbbatch my_scenario.toml
 
-# Tests.
+# Tests, from the repository root.
 pytest tests/ -v
 ```
+
+The commands are symbolic links in the `physdemo` suite's `bin/`
+directory (§9.5), so they run by name from any directory.
 
 ### 9.3 Cluster deployment and the rendering budget
 
@@ -653,12 +659,31 @@ nodes, and software rendering already meets Principle 4. Should a
 demonstration ever need a very large display or a much heavier scene,
 EGL is a measured and available escape hatch requiring no code change.
 
-**Remaining open item: frame delivery.** The numbers above measure
-render *throughput* on the compute node. How finished frames reach the
-viewer — a VNC or OnDemand desktop session is the expected path — is a
-separate and smaller question that has not yet been measured. Note that
-plain SSH X11 forwarding is not the answer: it ships GL commands rather
-than pixels and will disappoint regardless of how fast the node renders.
+**Frame delivery: measured.** The numbers above measure render
+*throughput* on the compute node, offscreen. How finished frames reach
+the viewer was measured on 2026-09-17 with the suite's
+`physdemo-check --onscreen` (a 960 x 720 window, a small test scene, so
+the figures compare *paths* and are not comparable with the table
+above). All three paths drew correctly, every one in software
+(`llvmpipe`):
+
+| How the display is reached | Frame rate |
+| --- | --- |
+| Open OnDemand desktop | 9.7 fps |
+| `ssh -X` to a login node | 6.2 fps |
+| Interactive job with `--x11` | 4.4 fps |
+
+**The Open OnDemand desktop is the recommended path for students**: it
+is the fastest, and it does not depend on the student's own X server.
+X11 forwarding works from a client whose X server supports GLX, at a
+lower frame rate, because each finished frame crosses the network
+uncompressed. It has been seen to crash from some Windows clients
+(MoTTY / PuTTY: `bad X server connection`), and those students should
+use OnDemand. Delivery, not rendering, is now the slowest stage, which
+strengthens the advice above: a smaller window is the first knob.
+These are observations of one site; the suite keeps them in
+`physdemo/site/hellbender/notes.md`, where another site's would go
+beside them.
 
 ### 9.4 Data interchange
 
@@ -673,32 +698,53 @@ HDF5 output is excluded from version control as bulky derived data: the
 scenario that generated it is tracked instead, which is smaller and more
 useful (§8.5).
 
-### 9.5 The shared environment
+### 9.5 The shared environment: the `physdemo` suite
 
-Students must not have to build a Python environment. The project
-follows the group's existing practice of a shared mamba environment
-plus an Lmod modulefile, so that a student logs in and turns the tool on
-in one command.
+Students must not have to build a Python environment, and nobody
+should have to recall a path to run a tool. The tool is one member of
+the **`physdemo` suite** (`github.com/UMKC-CPG/physdemo`): a set of
+course demonstration tools that share one Python environment and one
+`bin/` directory of commands. The suite, not this repository, owns the
+environment.
 
-```
-/cluster/VAST/rulisp-lab/cpg/mamba/envs/rigid_body      the environment
-/cluster/VAST/rulisp-lab/cpg/modulefiles/cpg_rigidbody/ the modulefile
-```
-
-This mirrors the arrangement already in place for other group codes —
-there is a per-project environment beside `sabsim` and others, and the
-modulefile follows the documented pattern of `cpg_lammps`. A session
-then begins:
+**What the suite provides.** One virtual environment built from a
+pinned `requirements.txt`; a `bin/` of symbolic links, one per command,
+named without `.py` (`rbsim`, `rbbatch`); an `activate.sh` that puts
+both on the `PATH`; and, optionally, an Lmod modulefile that does the
+same. A session begins:
 
 ```bash
-module load cpg_rigidbody
-rbsim
+sdemo                  # or: module load cpg_physdemo
+rbsim scenarios/dzhanibekov.toml
 ```
 
-The modulefile is responsible for activating the environment and putting
-`src/scripts/` on `PATH`. Because the environment is shared and
-read-only to students, everyone runs identical library versions, which
-also makes the §9.3 performance figures meaningful across users.
+Because the environment is shared and read-only to students, everyone
+runs identical library versions, which also makes the §9.3 performance
+figures meaningful across users.
+
+**The three rules this tool obeys,** so that the suite's
+`install_tool.sh` can link it and the link works:
+
+1. Every entry point under `src/scripts/` begins with
+   `#!/usr/bin/env python3` and is executable.
+2. An entry point finds the package from its own **resolved** location
+   (`os.path.realpath(__file__)`), never from the working directory and
+   never from `abspath`, which would name the link in the suite's `bin/`
+   rather than the file.
+3. The rc file is found beside the resolved script when no machine-local
+   copy exists.
+
+**Portability.** Nothing in this repository names a path on one
+computer. The suite installs to whatever prefix it is given, on any
+system with Python 3.10+; what is specific to the group's cluster lives
+in the suite's `site/` directory. Without the suite, the tool runs from
+any environment holding the packages of §9.1.
+
+**History.** An earlier draft of this section described a per-project
+mamba environment and a `cpg_rigidbody` modulefile. Neither was ever
+created: through `v0.3` the tool ran from a virtual environment named
+`rigid`, activated by hand. The suite replaced that arrangement with
+the same package versions.
 
 ---
 

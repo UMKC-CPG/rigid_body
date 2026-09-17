@@ -157,7 +157,7 @@ pins). Three PSEUDOCODE-internal gaps were fixed:
 
 Implementation of `src/rigid_body/`, transcribed from PSEUDOCODE
 bottom-up so each module tests against a real oracle as it lands. Run the
-suite in the project's `rigid` venv: `pytest tests/ -v`.
+suite in the `physdemo` environment (`sdemo`): `pytest tests/ -v`.
 
 - [x] `core/orientation.py` (PSEUDOCODE §2) — quaternion algebra, the
       sandwich rotation and body-to-space matrix, the kinematic q_dot, the

@@ -73,9 +73,24 @@ dependencies, and architecture summary. -->
 
 ## Running
 
+The tool is a member of the `physdemo` suite (`../physdemo/`,
+`github.com/UMKC-CPG/physdemo`), which owns the shared environment
+and a `bin/` of commands linked to the entry points
+(`dev/ARCHITECTURE.md` §9.5). `sdemo` is the shell alias that sources
+the suite's `activate.sh`.
+
 ```bash
-# Replace with your project's run command.
+sdemo                                # activate the suite
+rbsim scenarios/dzhanibekov.toml     # Tier 1, by name, from anywhere
+rbbatch scenarios/dzhanibekov.toml -o out.h5        # Tier 2
 ```
+
+Entry points under `src/scripts/` MUST keep the suite's three rules: a
+`#!/usr/bin/env python3` first line and the executable bit; the package
+located from `os.path.realpath(__file__)` (the command is normally run
+through a symbolic link); the rc file found beside the resolved script.
+Put no absolute path and nothing specific to one cluster in this
+repository; site notes belong in `physdemo/site/`.
 
 ## Dependencies
 

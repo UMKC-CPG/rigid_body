@@ -71,20 +71,34 @@ tests/        Test suite (pytest)
 ## Running
 
 The project targets Python 3.10+ with NumPy, SciPy, vedo, VTK, and
-h5py, and runs inside a dedicated virtual environment (`rigid`) on the
-teaching cluster. Activate it first:
+h5py. It is one member of the
+[`physdemo`](https://github.com/UMKC-CPG/physdemo) suite of course
+demonstration tools, which provides the Python environment and puts
+every tool's commands on the `PATH`:
 
 ```bash
-source /cluster/VAST/rulisp-lab/cpg/virtual_envs/rigid/bin/activate
-cd /cluster/pixstor/home/rulisp/CPG/cpg-repo/rigid_body
+git clone https://github.com/UMKC-CPG/physdemo.git
+physdemo/install.sh                      # environment + activate.sh
+physdemo/install_tool.sh /path/to/rigid_body
 ```
+
+After that, a session is two commands, from any directory:
+
+```bash
+source ~/physdemo/activate.sh     # the CPG group aliases this: sdemo
+rbsim scenarios/dzhanibekov.toml
+```
+
+`physdemo-check` reports whether the machine can draw, on screen and
+off. The tool also runs without the suite, from any environment holding
+the packages above, as `src/scripts/rbsim.py`.
 
 ### Interactive tier — a live window (`rbsim`)
 
 Open a scenario in a live window and watch it tumble:
 
 ```bash
-python src/scripts/rbsim.py scenarios/dzhanibekov.toml
+rbsim scenarios/dzhanibekov.toml
 ```
 
 Controls: **space** pauses and resumes, **s** single-steps, **-** slows,
@@ -95,13 +109,13 @@ triads. The full key reference is drawn in the window's bottom-left corner,
 so nothing needs memorizing. Rendering is in **software**; no GPU is
 required.
 
-> **A live window needs a real desktop session on the cluster** — a VNC
-> or Open OnDemand desktop. **Plain SSH X11 forwarding (including MoTTY /
-> PuTTY `-X`) does not work and will crash**: it ships GL commands rather
-> than pixels, and VTK cannot get a valid rendering context, so the
-> window segfaults (`bad X server connection`). See
-> `dev/ARCHITECTURE.md` §9.3. If you only have an SSH terminal, use the
-> headless capture below instead.
+> **On the cluster, use an Open OnDemand (or VNC) desktop for a live
+> window.** It is the fastest path and does not depend on your own X
+> server. SSH X11 forwarding (`ssh -X`) also works from a client whose
+> X server supports GLX, at a lower frame rate; from some Windows
+> clients (MoTTY / PuTTY) it has crashed with `bad X server
+> connection`. See `dev/ARCHITECTURE.md` §9.3 for the measurements. If
+> you only have an SSH terminal, use the headless capture below.
 
 ### No display? Capture frames headlessly
 
@@ -109,7 +123,7 @@ With no desktop session, render offscreen and save images you can view
 (or turn into a video). Save the final frame:
 
 ```bash
-python src/scripts/rbsim.py scenarios/dzhanibekov.toml \
+rbsim scenarios/dzhanibekov.toml \
     --screenshot dzhanibekov.png --frames 60
 ```
 
@@ -117,7 +131,7 @@ or save every frame as an image sequence and assemble a video with
 ffmpeg:
 
 ```bash
-python src/scripts/rbsim.py scenarios/dzhanibekov.toml \
+rbsim scenarios/dzhanibekov.toml \
     --save-frames dz_frames/ --frames 300
 ffmpeg -framerate 30 -i dz_frames/frame_%05d.png dzhanibekov.mp4
 ```
@@ -128,7 +142,7 @@ Run a scenario deterministically and write the full trajectory to HDF5
 with an XDMF companion (and a live conservation-drift report):
 
 ```bash
-python src/scripts/rbbatch.py scenarios/dzhanibekov.toml -o dzhanibekov.h5
+rbbatch scenarios/dzhanibekov.toml -o dzhanibekov.h5
 ```
 
 The scenario is embedded in the output as provenance, so any result
