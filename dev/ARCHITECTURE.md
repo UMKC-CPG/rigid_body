@@ -606,7 +606,7 @@ rbbatch my_scenario.toml
 pytest tests/ -v
 ```
 
-The commands are symbolic links in the `physdemo` suite's `bin/`
+The commands are provided by links in the `physdemo` suite's `bin/`
 directory (§9.5), so they run by name from any directory.
 
 ### 9.3 Cluster deployment and the rendering budget
@@ -729,7 +729,7 @@ figures meaningful across users.
    `#!/usr/bin/env python3` and is executable.
 2. An entry point finds the package from its own **resolved** location
    (`os.path.realpath(__file__)`), never from the working directory and
-   never from `abspath`, which would name the link in the suite's `bin/`
+   never from `abspath`, which would name the suite's link to the script
    rather than the file.
 3. The rc file is found beside the resolved script when no machine-local
    copy exists.

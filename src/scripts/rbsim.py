@@ -31,7 +31,7 @@ import sys
 from datetime import datetime
 
 # realpath, not abspath: this script is normally run through a
-# symbolic link in the physdemo suite's bin/ directory, and the
+# symbolic link that the physdemo suite keeps to it, and the
 # package must be found beside the real file, not beside the link.
 # The package lives one directory up from this script (in ``src/``); put it
 # on the path so ``rigid_body`` imports resolve when run directly.
