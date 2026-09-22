@@ -21,7 +21,11 @@
       been tried".
 - [ ] (§9.5) Cut a release tag once Route B is confirmed, and point the
       README's `pip install` URL at `refs/tags/<tag>` so that a class
-      installs a fixed version rather than `main`.
+      installs a fixed version rather than `main`. Every release bumps
+      `version` in `pyproject.toml`: pip decides whether to update by
+      comparing versions, not code, so an unchanged number means
+      `pip install --upgrade` does nothing (physdemo README, "Updating
+      a tool").
 
 ---
 

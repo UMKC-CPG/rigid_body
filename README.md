@@ -89,7 +89,11 @@ rbsim --check
 
 `pip` fetches the numerical and graphics libraries (about 1 GB) and
 creates the `rbsim` and `rbbatch` commands. No `git`, compiler, or GPU
-is needed. In later sessions only the `activate` line is repeated. The
+is needed. In later sessions only the `activate` line is repeated. To update
+later, `pip install --upgrade` with the same URL picks up a new
+release; between releases the version number does not change and
+`pip` will do nothing, so use
+`pip install --force-reinstall --no-deps <the same URL>`. The
 companion `scattering` tool installs into the same environment with one
 more `pip install` line.
 
