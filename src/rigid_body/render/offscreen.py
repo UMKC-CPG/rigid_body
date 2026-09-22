@@ -1,8 +1,8 @@
-"""Choosing VTK's window class for offscreen drawing (PSEUDOCODE
-Section 16.4; DESIGN Section 15.4). This module imports neither vtk nor vedo, because its one
-function must run BEFORE either is imported: VTK fixes its window
-class at import time from the environment variable
-VTK_DEFAULT_OPENGL_WINDOW.
+"""Choosing VTK's window class for offscreen drawing (physdemo
+PSEUDOCODE 4, inherited). This module imports neither vtk nor vedo,
+because its one function must run BEFORE either is imported: VTK
+fixes its window class at import time from the environment
+variable VTK_DEFAULT_OPENGL_WINDOW.
 
 The rule is the physdemo suite's, and it is portable by construction:
 
@@ -16,9 +16,10 @@ The rule is the physdemo suite's, and it is portable by construction:
 
 An explicit VTK_DEFAULT_OPENGL_WINDOW in the environment always wins.
 
-Attribution: this module is part of the rigid_body teaching tool. It
-is the same rule, and the same code, as `render/offscreen.py` in the
-companion scattering tool, where it was first needed and verified.
+Attribution: this module is inherited from the physdemo suite's
+member-tool skeleton (github.com/UMKC-CPG/physdemo), where it was
+first written for the scattering tool and verified; it is part of
+the Rigid Body teaching tool.
 """
 
 import os

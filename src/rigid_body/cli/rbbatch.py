@@ -31,13 +31,14 @@ import sys
 from typing import NamedTuple, Optional
 
 from rigid_body.cli.support import (
-    copy_rc_file, load_rc_defaults, locate_scenario, record_command)
+    copy_rc_file, load_rc_defaults, locate_run_file, record_command)
 from rigid_body.scenario.serialization import (
     load_scenario, scenario_to_toml, build_run_components,
     run_batch_from_scenario)
 from rigid_body.sinks.hdf5_sink import Hdf5Sink, _xdmf_path_for
 from rigid_body.analysis.conservation_monitor import ConservationMonitor
 
+COMMAND_NAME = "rbbatch"
 RC_FILENAME = "rbbatchrc.py"
 
 
@@ -232,12 +233,12 @@ def main(command_line_args=None):
     suite drive this without ``sys.argv``."""
     settings = ScriptSettings(command_line_args)
     if settings.write_rc:
-        return copy_rc_file(RC_FILENAME)
+        return copy_rc_file(RC_FILENAME, ".", COMMAND_NAME)
     # A scenario that is missing or wrong is the commonest mistake a
     # student makes; it earns a message and status 2, not a traceback.
     try:
-        scenario_path = str(locate_scenario(settings.scenario_path,
-                                            command_name="rbbatch"))
+        scenario_path = str(locate_run_file(settings.scenario_path,
+                                            COMMAND_NAME, noun="scenario"))
         output_path = settings.output or default_output_path(
             scenario_path, settings.output_directory)
         result = run_batch_job(
@@ -246,7 +247,7 @@ def main(command_line_args=None):
             flush_every=settings.flush_every,
             enable_monitor=settings.enable_monitor)
     except (FileNotFoundError, ValueError, KeyError) as problem:
-        print(f"rbbatch: {problem}", file=sys.stderr)
+        print(f"{COMMAND_NAME}: {problem}", file=sys.stderr)
         return 2
     report(result)
     return 0

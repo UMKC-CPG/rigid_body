@@ -1,4 +1,5 @@
-"""Verifies PSEUDOCODE Section 16: the packaged examples, the rc lookup,
+"""Verifies PSEUDOCODE Section 16 (with the inherited
+``cli/support.py`` of 16.2): the packaged examples, the rc lookup,
 the command log, the self-check, and errors that are messages. Everything
 here must hold in a clone, in a linked suite, and in an installed copy, so
 nothing here looks for a file except through the package."""
@@ -38,37 +39,39 @@ def test_packaged_examples_load_and_match_scenarios():
         {p.name for p in packaged.values()}
 
 
-def test_locate_scenario(tmp_path, monkeypatch, capsys):
+def test_locate_run_file_with_the_scenario_noun(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     packaged = support.example_files()["dzhanibekov"]
-    assert support.locate_scenario(str(packaged)) == packaged
-    assert support.locate_scenario("dzhanibekov") == packaged
-    assert support.locate_scenario("dzhanibekov.toml") == packaged
+    locate = support.locate_run_file
+    assert locate(str(packaged), "rbsim", noun="scenario") == packaged
+    assert locate("dzhanibekov", "rbsim", noun="scenario") == packaged
+    assert locate("dzhanibekov.toml", "rbsim", noun="scenario") == packaged
     assert "using the packaged example" in capsys.readouterr().err
     (tmp_path / "dzhanibekov.toml").write_text("")
-    assert support.locate_scenario("dzhanibekov.toml") == \
+    assert locate("dzhanibekov.toml", "rbsim", noun="scenario") == \
         Path("dzhanibekov.toml")                  # a local file wins
     for wrong in ("sub/dzhanibekov", "no_such_example"):
-        with pytest.raises(FileNotFoundError, match="free_tumble"):
-            support.locate_scenario(wrong)
+        with pytest.raises(FileNotFoundError,
+                           match="no such scenario.*free_tumble"):
+            locate(wrong, "rbsim", noun="scenario")
 
 
 def test_copy_examples_never_overwrites(tmp_path, capsys):
     target = tmp_path / "my runs"
-    assert support.copy_examples(target) == 0
+    assert support.copy_examples(target, "rbsim") == 0
     names = sorted(p.name for p in target.iterdir())
     assert names == sorted(p.name for p in support.example_files().values())
     edited = target / "dzhanibekov.toml"
     edited.write_text("# my edit\n")
     capsys.readouterr()
-    assert support.copy_examples(target) == 0
+    assert support.copy_examples(target, "rbsim") == 0
     assert edited.read_text() == "# my edit\n"
     assert capsys.readouterr().out.count("kept") == len(names)
 
 
 def test_copy_into_a_read_only_directory_is_a_message(read_only_directory,
                                                       capsys):
-    assert support.copy_examples(read_only_directory) == 1
+    assert support.copy_examples(read_only_directory, "rbsim") == 1
     assert "Choose a directory you can write" in capsys.readouterr().err
 
 

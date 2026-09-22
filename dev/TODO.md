@@ -13,6 +13,19 @@
 
 ## ARCHITECTURE
 
+- [ ] (§1, §3.9) Split `dev/DESIGN.md` and `dev/PSEUDOCODE.md` into
+      `dev/design/NN-*.md` and `dev/pseudocode/NN-*.md` with an index
+      in each top file, as the scattering tool and the physdemo
+      skeleton have; they are 127 KB and 152 KB. `CLAUDE.md`
+      ("Document Hierarchy") promises this entry.
+- [x] (§3.9) 2026-09-22: the shared files (`cli/support.py`, the
+      fronts, `render/offscreen.py`, the package docstrings, the
+      installed-copy and offscreen tests, `tests/conftest.py`, and
+      `.claude/commands/`) are inherited from the physdemo skeleton
+      and refreshed with `physdemo-new-tool --refresh`; PSEUDOCODE
+      §16.2 records the seam, and `CLAUDE.md` was rebuilt from the
+      skeleton's with this tool's sections kept.
+
 <!-- Tasks related to layout, modules, build. -->
 
 - [ ] (§9.5) Route B has been run on Linux only. Have someone run the

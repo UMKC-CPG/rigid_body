@@ -59,5 +59,9 @@ slurm-*.out
 .idea/
 .vscode/
 
+# Claude Code local session state. settings.local.json accumulates
+# machine-specific permission grants and absolute paths.
+.claude/settings.local.json
+
 # Machine-local rc overrides ($RIGID_BODY_RC copies); never tracked.
 .rigid_body/

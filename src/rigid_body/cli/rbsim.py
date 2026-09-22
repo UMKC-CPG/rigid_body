@@ -29,7 +29,11 @@ Sections 3.9 and 9.5): the executable ``src/scripts/rbsim.py``, which the
 physdemo suite links and a clone runs directly; and the console script
 that ``pip install`` creates from ``pyproject.toml``, which calls
 :func:`console_main` below. Getting to a first run -- the packaged
-examples, ``--check``, ``--write-rc`` -- is PSEUDOCODE Section 16.
+examples, ``--check``, ``--write-rc`` -- is PSEUDOCODE Section 16; the
+helpers it calls are ``cli/support.py``, INHERITED from the physdemo
+skeleton (Section 16.2), which holds no command name and no dependency
+list, so this module supplies ``COMMAND_NAME``,
+``CHECKED_DISTRIBUTIONS``, and :func:`run_offscreen`.
 """
 
 import argparse
@@ -37,7 +41,7 @@ import os
 import sys
 
 from rigid_body.cli.support import (
-    copy_examples, copy_rc_file, load_rc_defaults, locate_scenario,
+    copy_examples, copy_rc_file, load_rc_defaults, locate_run_file,
     record_command, self_check)
 from rigid_body.scenario.serialization import load_scenario
 from rigid_body.render.palettes import select_palette, LIGHT_PALETTE
@@ -50,7 +54,16 @@ from rigid_body.ui.interactive_session import run_interactive_session
 # (PSEUDOCODE Section 16.4); so run_interactive_job decides, then imports.
 # It also keeps ``--help`` and a mistyped path from paying for VTK's import.
 
+COMMAND_NAME = "rbsim"
 RC_FILENAME = "rbsimrc.py"
+
+# The packages ``rbsim --check`` reports on: the ones this tool imports,
+# by the names ``pip`` knows them by. pyproject.toml declares the same
+# set (minus the Python 3.10 TOML backport), and a test keeps the two in
+# agreement. It lives here and not in support.py because it differs per
+# tool and the inherited module must not.
+CHECKED_DISTRIBUTIONS = ("numpy", "scipy", "matplotlib", "vedo", "vtk",
+                         "h5py", "pint", "tomli_w")
 
 
 _BUILTIN_RC_DEFAULTS = {
@@ -306,22 +319,42 @@ window and the default presentation.
         self.check = arguments.check
 
 
+def run_offscreen(scenario_path, frames):
+    """Run ``scenario_path`` for ``frames`` frames offscreen THROUGH THE
+    ORDINARY CODE PATH (:func:`run_interactive_job`) and return the last
+    frame as an array. This is what ``--check`` runs;
+    ``support.self_check`` calls ``prepare_offscreen()`` before it, so
+    the renderer may be imported here. An injected renderer is not
+    closed by ``run_interactive_job`` (it closes only a renderer it
+    built), which is what lets the picture be read back afterwards."""
+    from rigid_body.render.vedo_renderer import VedoRenderer
+    renderer = VedoRenderer(LIGHT_PALETTE, size=(640, 480),
+                            offscreen=True)
+    run_interactive_job(scenario_path, frames=frames, offscreen=True,
+                        renderer=renderer)
+    image = renderer.screenshot(as_array=True)
+    renderer.close()
+    return image
+
+
 def main(command_line_args=None):
     """Assemble the settings and run the interactive session, or one of
     the first-run utilities. Returns the exit status. Accepting an
     argument list lets the test suite drive this without ``sys.argv``."""
     settings = ScriptSettings(command_line_args)
     if settings.examples is not None:
-        return copy_examples(settings.examples)
+        return copy_examples(settings.examples, COMMAND_NAME)
     if settings.write_rc:
-        return copy_rc_file(RC_FILENAME)
+        return copy_rc_file(RC_FILENAME, ".", COMMAND_NAME)
     if settings.check:
-        return self_check(run_interactive_job)
+        return self_check(run_offscreen, COMMAND_NAME,
+                          CHECKED_DISTRIBUTIONS)
 
     # A scenario that is missing or wrong is the commonest mistake a
     # student makes; it earns a message and status 2, not a traceback.
     try:
-        scenario_path = locate_scenario(settings.scenario_path)
+        scenario_path = locate_run_file(settings.scenario_path,
+                                        COMMAND_NAME, noun="scenario")
         run_interactive_job(
             scenario_path,
             window_size=(settings.window_width, settings.window_height),
@@ -330,7 +363,7 @@ def main(command_line_args=None):
             screenshot=settings.screenshot,
             save_frames=settings.save_frames)
     except (FileNotFoundError, ValueError, KeyError) as problem:
-        print(f"rbsim: {problem}", file=sys.stderr)
+        print(f"{COMMAND_NAME}: {problem}", file=sys.stderr)
         return 2
     if settings.screenshot is not None:
         print(f"Saved final frame to {settings.screenshot}")

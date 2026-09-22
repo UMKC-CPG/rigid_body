@@ -211,7 +211,9 @@ differs is only the few lines that start it.
 | `cli/rbsim.py` | Body of the interactive simulation (Tier 1) |
 | `cli/rbbatch.py` | Body of the batch job (Tier 2) |
 | `cli/support.py` | What both share: finding the rc file and the |
-| | packaged examples, copying them out, the self-check |
+| | packaged examples, copying them out, the self-check. INHERITED |
+| | from the physdemo skeleton; holds no command name, the command |
+| | modules pass theirs in (PSEUDOCODE §16.2) |
 | `defaults/rbsimrc.py`, `defaults/rbbatchrc.py` | The shipped |
 | | resource-control defaults (§7) |
 
@@ -228,6 +230,13 @@ Both fronts log the invocation to `command` and then call `main()`;
 `main(argv)` itself never logs, so the test suite can call it freely.
 Neither the fronts nor `cli/` hold any physics. `cli/` sits at the top
 of the dependency graph, where `scripts/` was, and nothing imports it.
+
+**Inherited files.** The fronts, `cli/support.py`,
+`render/offscreen.py`, the `defaults/` and `examples/` package
+docstrings, `tests/conftest.py`, the installed-copy and offscreen
+tests, and the slash commands are the physdemo suite's skeleton files
+with this tool's name substituted (PSEUDOCODE §16). They are changed
+in the suite first and refreshed here, never edited here.
 
 ---
 

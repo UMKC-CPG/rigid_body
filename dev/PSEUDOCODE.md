@@ -2935,9 +2935,24 @@ keys honored.
 ## 16. Entry Points and First-Run Support
 
 Specifies DESIGN §15. Governs `src/rigid_body/cli/rbsim.py`,
-`cli/rbbatch.py`, `cli/support.py`, `render/offscreen.py`, the fronts
-`src/scripts/rbsim.py` and `src/scripts/rbbatch.py`, and the `[project]`
-tables of `pyproject.toml`.
+`cli/rbbatch.py`, and the `[project]` tables of `pyproject.toml`.
+
+**Revised 2026-09-22: the shared files are inherited.** `cli/support.py`,
+`render/offscreen.py`, the fronts `src/scripts/rbsim.py` and
+`src/scripts/rbbatch.py`, the `defaults/` and `examples/` package
+docstrings, `tests/conftest.py`, `tests/unit/test_installed_copy.py`,
+`tests/unit/test_offscreen.py`, and `.claude/commands/` are now the
+physdemo suite's skeleton files with this tool's name substituted
+(`github.com/UMKC-CPG/physdemo`, its `dev/PSEUDOCODE.md` section 4,
+which is the reference text for them). They were this tool's own
+hand copies before, written first here and in the scattering tool;
+the skeleton reconciled the two. A change to one of them is made in
+the skeleton first and carried here with `physdemo-new-tool --refresh
+--package rigid_body --command rbsim --title "Rigid Body" .` and the
+same with `--command rbbatch`; a refresh that reports every file
+unchanged is the proof that nothing has drifted. Sections 16.2 and
+16.4 below are kept as this tool's record of what the inherited files
+do and of the seams at which 16.3 attaches to them.
 
 ### 16.1 Seam inventory
 
@@ -2968,10 +2983,34 @@ Consumed unchanged: `load_scenario` (§12), `run_interactive_session`
 sources (§15). The tests that loaded the scripts by file path now import
 the `cli` modules, which is where the functions they call live.
 
-### 16.2 Shared support (`cli/support.py`)
+### 16.2 Shared support (`cli/support.py`, inherited)
+
+**Seam inventory for the inherited version.** What differs from the
+hand copy this tool had, and what the command modules do about it:
+
+| Was (this tool's copy) | Is (the skeleton's) | 16.3 supplies |
+| --- | --- | --- |
+| `locate_scenario(argument,` | `locate_run_file(argument,` | the name, |
+| `command_name="rbsim")` | `command_name, noun="run file")` | and `noun=` |
+| | | `"scenario"` |
+| `copy_examples(directory)` | `copy_examples(directory,` | the name |
+| | `command_name)` | |
+| `copy_rc_file(rc_filename,` | `copy_rc_file(rc_filename,` | the name |
+| `directory=".")` | `directory, command_name)` | |
+| `CHECKED_DISTRIBUTIONS` here | in `cli/rbsim.py` | the tuple |
+| `self_check(run_interactive_job)`, | `self_check(run_offscreen,` | `run_offscreen` |
+| building the renderer itself | `command_name,` | in `cli/rbsim.py` |
+| | `checked_distributions)` | |
+| `$RIGID_BODY_RC` literal | `RC_ENVIRONMENT_VARIABLE`, the | nothing |
+| | same value | |
+
+The message for a missing input still says "no such scenario",
+because `rbsim` and `rbbatch` pass `noun="scenario"`; the inherited
+file itself says "run file" only as a default.
 
 ```
 PACKAGE_DEFAULTS_DIR = dirname(resolved(support.py)) / ".." / "defaults"
+RC_ENVIRONMENT_VARIABLE = "RIGID_BODY_RC"
 UTILITY_FLAGS = ("-h", "--help", "--examples", "--write-rc", "--check")
 
 function load_rc_defaults(rc_filename, builtin_defaults) -> dict:
@@ -2991,7 +3030,8 @@ function example_files() -> dict name -> path:
     # importlib.resources.files("rigid_body.examples"), every *.toml,
     # keyed by stem, in name order.
 
-function locate_scenario(argument) -> path:
+function locate_run_file(argument, command_name, noun="run file")
+        -> path:
     if exists(argument): return argument              # a real file wins
     if argument has no directory part:
         stem = argument without a trailing ".toml"
@@ -2999,35 +3039,36 @@ function locate_scenario(argument) -> path:
             note on stderr: "using the packaged example <path>"
             return example_files()[stem]
     raise FileNotFoundError(
-        "<argument>: no such scenario. Packaged examples: <names>. Run "
-        "one by name (rbsim <name>), or copy them here with "
-        "rbsim --examples.")
+        "<argument>: no such <noun>. Packaged examples: <names>. Run "
+        "one by name (<command_name> <name>), or copy them here with "
+        "<command_name> --examples.")
 
-function copy_without_overwriting(sources, directory) -> int:
+function copy_without_overwriting(sources, directory, command_name)
+        -> int:
     try: create directory if missing
     for source in sources:
         target = directory / basename(source)
         if exists(target): print "kept   <target> (already here)"
         else:              copy; print "wrote  <target>"
     on OSError: print "cannot write in <directory> (<why>); choose a
-        directory you can write, for example: rbsim --examples
-        ~/rigid-body-runs"; return 1
+        directory you can write, for example: <command_name> --examples
+        ~/rigid_body-runs"; return 1
     return 0
 
-function copy_examples(directory) -> int
-function copy_rc_file(rc_filename, directory) -> int
+function copy_examples(directory, command_name) -> int
+function copy_rc_file(rc_filename, directory, command_name) -> int
+function installed_versions(checked_distributions) -> dict
 
-function self_check(run_interactive_job) -> int:      # writes no file
-    print python version, platform, and for each declared dependency
+function self_check(run_offscreen, command_name, checked_distributions)
+        -> int:                                       # writes no file
+    print python version, platform, and for each checked distribution
         its installed version or "MISSING"
     if any MISSING: print RESULT: FAIL -- <which>; return 1
     try:
         prepare_offscreen()                                  # 16.4
-        renderer = VedoRenderer(LIGHT_PALETTE, size=(640, 480),
-                                offscreen=True)
-        run_interactive_job(example_files()["dzhanibekov"], frames=3,
-                            offscreen=True, renderer=renderer)
-        image = renderer.screenshot(as_array=True); renderer.close()
+        t0 = now
+        image = run_offscreen(first example file, frames=2)  # 16.3
+        print "drew        2 frames offscreen in <t> s"
     except Exception as problem:
         print RESULT: FAIL -- <type>: <problem>; return 1
     if image is uniform:
@@ -3036,17 +3077,21 @@ function self_check(run_interactive_job) -> int:      # writes no file
     print RESULT: PASS; return 0
 ```
 
-`self_check` takes `run_interactive_job` as an argument so that
+`self_check` takes `run_offscreen` as an argument so that
 `support.py` does not import `cli/rbsim.py`, which imports it. It
 catches every exception on purpose: its one job is to turn whatever goes
-wrong on an unfamiliar computer into a line a student can send on. An
-injected renderer is not closed by `run_interactive_job` (it closes only
-a renderer it built), which is what lets the picture be read afterwards.
+wrong on an unfamiliar computer into a line a student can send on.
 
 ### 16.3 The commands (`cli/rbsim.py`, `cli/rbbatch.py`) and their fronts
 
 ```
 # ---- cli/rbsim.py ----
+COMMAND_NAME = "rbsim"
+CHECKED_DISTRIBUTIONS = ("numpy", "scipy", "matplotlib", "vedo", "vtk",
+                         "h5py", "pint", "tomli_w")   # == pyproject deps
+                                                      #   minus the 3.10
+                                                      #   backport (tested)
+
 class ScriptSettings(argv=None):
     assign_rc_defaults(load_rc_defaults("rbsimrc.py", _BUILTIN_RC_DEFAULTS))
     reconcile(parse_command_line(argv))
@@ -3055,13 +3100,28 @@ class ScriptSettings(argv=None):
     # Exactly one of {scenario, --examples, --write-rc, --check} must be
     #   given; otherwise a usage error.
 
+function run_offscreen(scenario_path, frames) -> image:   # for self_check
+    # prepare_offscreen() was called by self_check before this.
+    renderer = VedoRenderer(LIGHT_PALETTE, size=(640, 480),
+                            offscreen=True)
+    # An injected renderer is not closed by run_interactive_job (it
+    #   closes only a renderer it built), which is what lets the picture
+    #   be read afterwards.
+    run_interactive_job(scenario_path, frames=frames, offscreen=True,
+                        renderer=renderer)
+    image = renderer.screenshot(as_array=True); renderer.close()
+    return image
+
 function main(argv=None) -> int:
     settings = ScriptSettings(argv)
-    if settings.examples is given: return copy_examples(settings.examples)
-    if settings.write_rc: return copy_rc_file("rbsimrc.py", cwd)
-    if settings.check:    return self_check(run_interactive_job)
+    if settings.examples is given:
+        return copy_examples(settings.examples, COMMAND_NAME)
+    if settings.write_rc: return copy_rc_file("rbsimrc.py", cwd, COMMAND_NAME)
+    if settings.check:
+        return self_check(run_offscreen, COMMAND_NAME, CHECKED_DISTRIBUTIONS)
     try:
-        scenario_path = locate_scenario(settings.scenario_path)
+        scenario_path = locate_run_file(settings.scenario_path,
+                                        COMMAND_NAME, noun="scenario")
         run_interactive_job(scenario_path, ...as today...)
     except FileNotFoundError, ValueError, KeyError as problem:
         print "rbsim: <problem>" on stderr; return 2
@@ -3072,8 +3132,11 @@ function console_main():            # the pip route's front
     record_command(); sys.exit(main())
 
 # ---- cli/rbbatch.py: the same shape ----
-    rc file "rbbatchrc.py"; utilities: --write-rc only; the scenario may
-    be a packaged example by bare name; same error handling; returns 0.
+    COMMAND_NAME = "rbbatch"; rc file "rbbatchrc.py"; utilities:
+    --write-rc only, as copy_rc_file("rbbatchrc.py", cwd, COMMAND_NAME);
+    the scenario may be a packaged example by bare name, through
+    locate_run_file(argument, COMMAND_NAME, noun="scenario"); same error
+    handling; returns 0.
 
 # ---- src/scripts/rbsim.py (rbbatch.py alike) ----
 #!/usr/bin/env python3
@@ -3092,7 +3155,7 @@ if __name__ == "__main__":
 [tool.setuptools.package-data] rigid_body.examples = ["*.toml"]
 ```
 
-### 16.4 Offscreen drawing (`render/offscreen.py`)
+### 16.4 Offscreen drawing (`render/offscreen.py`, inherited)
 
 ```
 function prepare_offscreen() -> bool:
@@ -3124,10 +3187,11 @@ the suite always draws offscreen.
 - `example_files()` is non-empty, every entry loads with
   `load_scenario`, and its names equal the `*.toml` names in
   `scenarios/`.
-- `locate_scenario`: an existing path is returned unchanged; a bare
-  packaged name with and without `.toml` returns the packaged path; a
-  local file of the same name wins; a directory part or an unknown name
-  raises with the examples listed.
+- `locate_run_file` with `noun="scenario"`: an existing path is
+  returned unchanged; a bare packaged name with and without `.toml`
+  returns the packaged path; a local file of the same name wins; a
+  directory part or an unknown name raises "no such scenario" with the
+  examples listed.
 - `copy_examples`: writes all into an empty directory; a second call
   writes nothing; an edited copy is untouched; a read-only directory
   returns 1 with the remedy and no traceback.
