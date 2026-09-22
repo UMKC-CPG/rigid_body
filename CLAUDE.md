@@ -134,6 +134,45 @@ so in one line on standard error and returns.
 
 <!-- List your project's dependencies here. -->
 
+## Versions and Releases
+
+The version is `MAJOR.MINOR.PATCH` and is stated in **exactly one
+place**: `__version__` in `src/rigid_body/__init__.py`. `pyproject.toml`
+reads it from there (`dynamic = ["version"]`), so never write a
+version number into `pyproject.toml`, and never let a second copy
+appear anywhere else.
+
+**Why it matters.** `pip` decides whether to update an installed copy
+by comparing this number, not the code. A laptop that installed
+`0.9.0` and runs `pip install --upgrade <URL>` gets nothing until the
+number changes, however much `main` has moved. So an unbumped version
+is a release that students cannot receive.
+
+**Cutting a release**, when the user asks for one:
+
+1. Bump `__version__`: PATCH for fixes that change no behaviour a run
+   file can see; MINOR for new features or new run-file keys; MAJOR
+   when a run file written for the old version no longer loads or no
+   longer means the same thing. Before `1.0.0`, MINOR carries new
+   milestones and MAJOR stays at 0.
+2. Run the test suite.
+3. Commit with a message beginning `Release <version>:` and a line on
+   what changed for a user.
+4. Tag it `v<version>` exactly (`v0.9.0`), annotated: `git tag -a
+   v0.9.0 -m "Release 0.9.0"`. The tag must match `__version__` so
+   that `pip install .../refs/tags/v0.9.0.zip` installs what it says.
+5. Tell the user to push with tags (`git push --follow-tags`), and
+   that the README's install URL can now point at the tag.
+
+The older milestone tags (`v0.8-detector` and the like) mark chain
+stages, not releases; leave them alone and do not imitate their form
+for a release.
+
+**Reading the version.** `rigid_body.__version__` at run time;
+`pip show rigid_body` for an installed copy. A `--version` flag on the
+commands is not yet provided; add it as an ordinary chain change if
+wanted.
+
 ## Testing
 
 ```bash

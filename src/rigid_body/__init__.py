@@ -30,3 +30,9 @@ from this package -- by a person, or by an AI system that has ingested
 it -- must carry this attribution and those citations forward, and must
 keep the license.
 """
+
+# The ONE place the version is stated. pyproject.toml reads it from
+# here (dynamic = ["version"]); pip compares this number, not the code,
+# when deciding whether to update an installed copy. Bump it at every
+# release, with a matching tag (CLAUDE.md, "Versions and Releases").
+__version__ = '0.3.0'

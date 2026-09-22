@@ -22,7 +22,9 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rigid_body"
-version = "0.3.0"
+# The version is read from rigid_body/__init__.py (__version__), the one
+# place it is stated; see [tool.setuptools.dynamic] below.
+dynamic = ["version"]
 description = "Teaching tool for rigid-body rotation: Poinsot, Euler, tops"
 requires-python = ">=3.10"
 license = {text = "GPL-3.0-or-later"}
@@ -54,6 +56,9 @@ Repository = "https://github.com/UMKC-CPG/rigid_body"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "rigid_body.__version__"}
 
 # The example scenarios are data inside the package, so that they are
 # installed with it and `rbsim --examples` can find them anywhere.
