@@ -25,6 +25,7 @@ name = "rigid_body"
 version = "0.3.0"
 description = "Teaching tool for rigid-body rotation: Poinsot, Euler, tops"
 requires-python = ">=3.10"
+license = {text = "GPL-3.0-or-later"}
 readme = "README.md"
 dependencies = [
     "numpy>=2.0",

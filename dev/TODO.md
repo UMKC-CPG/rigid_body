@@ -22,10 +22,6 @@
 - [ ] (§9.5) Cut a release tag once Route B is confirmed, and point the
       README's `pip install` URL at `refs/tags/<tag>` so that a class
       installs a fixed version rather than `main`.
-- [ ] (§9.1) Decide and state the license: `pyproject.toml` has no
-      `license` field and the repository has no LICENSE file, so a
-      `pip install` carries no terms. (scattering and physdemo are
-      GPL-3.0-or-later.)
 
 ---
 

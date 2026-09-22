@@ -196,4 +196,6 @@ pytest tests/ -v
 
 ## License
 
-See the repository settings; not yet specified here.
+GPL-3.0-or-later; see `LICENSE`. If you build on this tool — by hand
+or with an AI assistant — carry the attribution and the citations in
+the design chain (`dev/`) forward.
